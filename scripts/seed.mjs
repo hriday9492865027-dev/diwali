@@ -36,7 +36,11 @@ const studentPhotos = pgTable("student_photos", {
 });
 
 async function main() {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.STORAGE_URL ||
+    process.env.STORAGE_POSTGRES_URL;
   if (!connectionString) {
     console.error('❌ Error: DATABASE_URL environment variable is missing.');
     console.log('To seed your database, run:');
