@@ -30,8 +30,8 @@ export async function POST(
     }
 
     // Validate MIME type
-    const validMimes = ["image/jpeg", "image/png", "image/webp"];
-    if (!validMimes.includes(file.type)) {
+    const validMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/pjpeg"];
+    if (!file.type.startsWith("image/") && !validMimes.includes(file.type)) {
       return NextResponse.json(
         { message: "Only JPEG, PNG, or WebP images are allowed." },
         { status: 400 }

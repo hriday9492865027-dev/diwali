@@ -11,7 +11,17 @@ export async function processImageToParticleBuffers(
 ): Promise<ParticleBufferData> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    // Only set anonymous crossOrigin for absolute URLs from third-party domains
+    if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+      try {
+        const parsed = new URL(imageUrl);
+        if (typeof window !== "undefined" && parsed.host !== window.location.host) {
+          img.crossOrigin = "anonymous";
+        }
+      } catch {
+        img.crossOrigin = "anonymous";
+      }
+    }
 
     img.onload = () => {
       try {
