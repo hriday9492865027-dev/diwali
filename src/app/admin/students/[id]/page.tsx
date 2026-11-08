@@ -42,7 +42,27 @@ export default function StudentDetailPage({
   const [caption, setCaption] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const handlePreviewExperience = async () => {
+    setIsPreviewing(true);
+    try {
+      const res = await fetch(`/api/admin/students/${studentId}/preview`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        setMessage(data.message || "Failed to launch student preview.");
+        setIsPreviewing(false);
+      }
+    } catch {
+      setMessage("Network error launching student preview.");
+      setIsPreviewing(false);
+    }
+  };
 
   useEffect(() => {
     fetch(`/api/admin/students/${studentId}`)
@@ -143,13 +163,16 @@ export default function StudentDetailPage({
             <span>Return to Creator Console</span>
           </Link>
 
-          <Link
-            href="/activities/portrait"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-diwali-gold bg-diwali-gold/10 border border-diwali-gold/30 hover:bg-diwali-gold/20 transition-colors"
+          <button
+            type="button"
+            onClick={handlePreviewExperience}
+            disabled={isPreviewing}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs text-diwali-gold bg-diwali-gold/15 border border-diwali-gold/40 hover:bg-diwali-gold/30 hover:scale-105 active:scale-95 transition-all shadow-glow-gold disabled:opacity-50"
           >
-            <span>Preview Particle Portrait</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{isPreviewing ? "Launching..." : "Preview Experience as Student"}</span>
             <ExternalLink className="w-3.5 h-3.5" />
-          </Link>
+          </button>
         </div>
 
         {message && (
