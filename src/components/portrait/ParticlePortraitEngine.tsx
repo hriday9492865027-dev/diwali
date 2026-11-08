@@ -196,6 +196,7 @@ export function ParticlePortraitEngine({
       blending: THREE.AdditiveBlending,
       uniforms: {
         uTime: { value: 0 },
+        uExplosionProgress: { value: 0.0 },
         uMorphProgress: { value: 0.0 },
         uDissolveProgress: { value: 0.0 },
         uNoiseStrength: { value: 1.0 },
@@ -207,10 +208,11 @@ export function ParticlePortraitEngine({
     });
     materialRef.current = material;
 
-    // 4. Initial Points Mesh
+    // 4. Initial Points Mesh (Hidden initially until rocket detonates at apex)
     const geometry = new THREE.BufferGeometry();
     geometryRef.current = geometry;
     const points = new THREE.Points(geometry, material);
+    points.visible = false;
     pointsMeshRef.current = points;
     scene.add(points);
 
@@ -218,18 +220,25 @@ export function ParticlePortraitEngine({
     const rocketGroup = new THREE.Group();
     rocketGroup.visible = false;
 
+    // Glowing Rocket Head Spark
+    const headGeom = new THREE.SphereGeometry(0.06, 12, 12);
+    const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const headMesh = new THREE.Mesh(headGeom, headMat);
+    headMesh.position.y = 0.16;
+    rocketGroup.add(headMesh);
+
     // Rocket Body Cone
-    const coneGeom = new THREE.ConeGeometry(0.08, 0.28, 12);
+    const coneGeom = new THREE.ConeGeometry(0.09, 0.32, 12);
     const coneMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
     const coneMesh = new THREE.Mesh(coneGeom, coneMat);
     coneMesh.rotation.x = Math.PI;
     rocketGroup.add(coneMesh);
 
     // Rocket Flame Tail
-    const tailGeom = new THREE.CylinderGeometry(0.02, 0.08, 0.35, 8);
+    const tailGeom = new THREE.CylinderGeometry(0.02, 0.09, 0.45, 8);
     const tailMat = new THREE.MeshBasicMaterial({ color: 0xea580c });
     const tailMesh = new THREE.Mesh(tailGeom, tailMat);
-    tailMesh.position.y = -0.25;
+    tailMesh.position.y = -0.32;
     rocketGroup.add(tailMesh);
 
     rocketMeshRef.current = rocketGroup;
@@ -256,34 +265,69 @@ export function ParticlePortraitEngine({
       const now = performance.now();
       const elapsedInState = (now - stateStartTimeRef.current) / 1000;
 
-      if (currentState === "ROCKET_LAUNCH") {
+      if (currentState === "READY") {
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = false;
+        }
+        if (rocketMeshRef.current) {
+          rocketMeshRef.current.visible = false;
+        }
+      } else if (currentState === "ROCKET_LAUNCH") {
+        // Points MUST stay hidden during rocket flight so no blob appears
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = false;
+        }
         if (rocketMeshRef.current) {
           rocketMeshRef.current.visible = true;
           // Ascend from bottom (-3.5) to center (0.5) over 1.2s
           const progress = Math.min(elapsedInState / 1.2, 1.0);
           const easeY = -3.5 + Math.sin(progress * Math.PI * 0.5) * 4.0;
           rocketMeshRef.current.position.y = easeY;
-          rocketMeshRef.current.position.x = Math.sin(progress * 4.0) * 0.1;
+          rocketMeshRef.current.position.x = Math.sin(progress * 4.0) * 0.08;
+
+          // Rocket flame tail flicker
+          const flameMesh = rocketMeshRef.current.children[2];
+          if (flameMesh) {
+            flameMesh.scale.y = 0.8 + Math.random() * 0.5;
+          }
 
           if (progress >= 1.0) {
-            // Rocket reached apex -> Trigger Explosion
+            // Rocket reached apex -> Detonate!
             rocketMeshRef.current.visible = false;
+            if (pointsMeshRef.current) {
+              pointsMeshRef.current.visible = true;
+            }
             playSound("explosion");
             setState("EXPLOSION");
             stateStartTimeRef.current = performance.now();
           }
         }
       } else if (currentState === "EXPLOSION") {
-        // Explosion burst lasts 0.3s before dispersion & reconstruction starts
-        if (elapsedInState > 0.3) {
+        // Point mesh visible, expanding outward from apex
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = true;
+        }
+        const burstDur = 0.45;
+        const burstProgress = Math.min(elapsedInState / burstDur, 1.0);
+        if (materialRef.current) {
+          materialRef.current.uniforms.uExplosionProgress.value = burstProgress;
+          materialRef.current.uniforms.uMorphProgress.value = 0.0;
+          materialRef.current.uniforms.uDissolveProgress.value = 0.0;
+        }
+
+        if (elapsedInState >= burstDur) {
           setState("IMAGE_RECONSTRUCTION");
           stateStartTimeRef.current = performance.now();
         }
       } else if (currentState === "IMAGE_RECONSTRUCTION") {
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = true;
+        }
         // Morph progress travels 0.0 -> 1.0 over 2.2 seconds
         const morphDur = 2.2;
         const progress = Math.min(elapsedInState / morphDur, 1.0);
         if (materialRef.current) {
+          materialRef.current.uniforms.uExplosionProgress.value = 1.0;
           materialRef.current.uniforms.uMorphProgress.value = progress;
           materialRef.current.uniforms.uDissolveProgress.value = 0.0;
         }
@@ -302,6 +346,9 @@ export function ParticlePortraitEngine({
         }
 
         if (progress >= 1.0) {
+          if (pointsMeshRef.current) {
+            pointsMeshRef.current.visible = false;
+          }
           // Advance to targeted or next photo and trigger rocket launch
           const nextIdx =
             targetPhotoIndexRef.current !== null
@@ -310,13 +357,7 @@ export function ParticlePortraitEngine({
           targetPhotoIndexRef.current = null;
           setCurrentPhotoIndex(nextIdx);
           loadPhotoToGeometry(photos[nextIdx].url).then(() => {
-            setState("ROCKET_LAUNCH");
-            stateStartTimeRef.current = performance.now();
-            playSound("rocket");
-            if (materialRef.current) {
-              materialRef.current.uniforms.uMorphProgress.value = 0.0;
-              materialRef.current.uniforms.uDissolveProgress.value = 0.0;
-            }
+            triggerLaunch();
           });
         }
       }
@@ -356,7 +397,15 @@ export function ParticlePortraitEngine({
     setState("ROCKET_LAUNCH");
     stateStartTimeRef.current = performance.now();
     playSound("rocket");
+    if (pointsMeshRef.current) {
+      pointsMeshRef.current.visible = false;
+    }
+    if (rocketMeshRef.current) {
+      rocketMeshRef.current.visible = true;
+      rocketMeshRef.current.position.set(0, -3.5, 0);
+    }
     if (materialRef.current) {
+      materialRef.current.uniforms.uExplosionProgress.value = 0.0;
       materialRef.current.uniforms.uMorphProgress.value = 0.0;
       materialRef.current.uniforms.uDissolveProgress.value = 0.0;
     }

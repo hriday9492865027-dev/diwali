@@ -180,18 +180,26 @@ export async function processImageToParticleBuffers(
           targetPositions[i * 3 + 1] = ty;
           targetPositions[i * 3 + 2] = tz;
 
-          // Initial position at explosion point (or scattered radial sphere)
-          positions[i * 3] = (Math.random() - 0.5) * 1.5;
-          positions[i * 3 + 1] = 1.0 + (Math.random() - 0.5) * 1.5;
-          positions[i * 3 + 2] = (Math.random() - 0.5) * 1.5;
+          // Spherical firecracker burst expansion coordinates (centered at apex y = 0.5)
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          const burstDist = Math.cbrt(Math.random()) * 2.4 + 0.6;
+          const ex = Math.sin(phi) * Math.cos(theta) * burstDist;
+          const ey = 0.5 + Math.sin(phi) * Math.sin(theta) * burstDist;
+          const ez = Math.cos(phi) * burstDist;
+
+          positions[i * 3] = ex;
+          positions[i * 3 + 1] = ey;
+          positions[i * 3 + 2] = ez;
 
           // Preserved exact original sampled RGB colors
           colors[i * 3] = c.r;
           colors[i * 3 + 1] = c.g;
           colors[i * 3 + 2] = c.b;
 
-          sizes[i] = Math.random() * 2.5 + 2.0;
-          alphas[i] = 1.0;
+          // Calibrated particle point size: fine, crisp starlight sparks
+          sizes[i] = Math.random() * 0.7 + 1.1;
+          alphas[i] = 0.9;
         }
 
         resolve({

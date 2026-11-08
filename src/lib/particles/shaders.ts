@@ -1,5 +1,6 @@
 export const portraitVertexShader = `
   uniform float uTime;
+  uniform float uExplosionProgress;
   uniform float uMorphProgress;
   uniform float uDissolveProgress;
   uniform float uNoiseStrength;
@@ -27,21 +28,29 @@ export const portraitVertexShader = `
     vColor = color;
     vAlpha = alpha;
 
-    // 1. Morph between initial burst dispersion and target coordinates
-    // Smooth cubic easing for fluid convergence
-    float t = smoothstep(0.0, 1.0, uMorphProgress);
-    vec3 mixedPos = mix(position, targetPosition, t);
+    // 1. Firecracker Explosion: starts at rocket apex (0.0, 0.5, 0.0)
+    vec3 apex = vec3(0.0, 0.5, 0.0);
 
-    // 2. Add subtle organic Simplex noise flow when formed (Portrait Idle)
-    if (t > 0.8) {
+    // Cubic easing for initial explosive blast dispersion
+    float expP = clamp(uExplosionProgress, 0.0, 1.0);
+    float burstEase = 1.0 - pow(1.0 - expP, 3.0);
+    vec3 burstPos = mix(apex, position, burstEase);
+
+    // 2. Morph from explosion burst into target sacred Rangoli geometry
+    float morphP = clamp(uMorphProgress, 0.0, 1.0);
+    float morphEase = smoothstep(0.0, 1.0, morphP);
+    vec3 mixedPos = mix(burstPos, targetPosition, morphEase);
+
+    // 3. Subtle ambient starlight breathing once crystallized (Portrait/Rangoli Idle)
+    if (morphEase > 0.8) {
       float idleTime = uTime * 0.8;
-      float noiseX = sin(mixedPos.y * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.02 * uNoiseStrength;
-      float noiseY = cos(mixedPos.x * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.02 * uNoiseStrength;
-      float breathe = sin(idleTime * 0.5) * 0.015;
+      float noiseX = sin(mixedPos.y * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.015 * uNoiseStrength;
+      float noiseY = cos(mixedPos.x * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.015 * uNoiseStrength;
+      float breathe = sin(idleTime * 0.6) * 0.01;
       mixedPos.x += noiseX;
       mixedPos.y += noiseY + breathe;
 
-      // Interactive forcefield cursor displacement (Forcefield technique)
+      // Interactive forcefield cursor displacement
       if (uMouseRadius > 0.0) {
         vec2 diff = mixedPos.xy - uMouse;
         float dist = length(diff);
@@ -53,23 +62,31 @@ export const portraitVertexShader = `
       }
     }
 
-    // 3. Outward dispersion upon dissolve
+    // 4. Outward dispersion upon dissolve
     if (uDissolveProgress > 0.0) {
       vec3 outwardDir = normalize(mixedPos + vec3(0.001));
-      float d = uDissolveProgress * 4.0;
+      float d = uDissolveProgress * 4.5;
       mixedPos += outwardDir * d * (1.0 + hash(targetPosition) * 1.5);
       vAlpha *= (1.0 - uDissolveProgress);
     }
 
-    // 4. Subtle shimmer in alpha and brightness
-    float shimmer = sin(uTime * 3.0 + hash(targetPosition) * 20.0) * 0.15;
-    vAlpha = clamp(vAlpha + shimmer, 0.0, 1.0);
+    // 5. Subtle shimmer in alpha and brightness
+    float shimmer = sin(uTime * 3.5 + hash(targetPosition) * 25.0) * 0.12;
+    vAlpha = clamp(vAlpha + shimmer, 0.1, 1.0);
 
     vec4 mvPosition = modelViewMatrix * vec4(mixedPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Attenuated point size based on camera distance and display pixel ratio
-    gl_PointSize = size * (240.0 / -mvPosition.z) * uPixelRatio;
+    // Attenuated point size based on camera distance and pixel ratio
+    // Calibrated for crisp, shimmering starlight embers (approx 3px-7px on screen)
+    float baseSize = size * (22.0 / -mvPosition.z) * uPixelRatio;
+
+    // During active explosion burst, temporarily flare up sparks
+    if (uMorphProgress < 0.15) {
+      baseSize *= (1.0 + (1.0 - expP) * 1.2);
+    }
+
+    gl_PointSize = clamp(baseSize, 2.0, 24.0);
   }
 `;
 
@@ -78,17 +95,19 @@ export const portraitFragmentShader = `
   varying float vAlpha;
 
   void main() {
-    // Distance from point center (0.0 to 0.5)
+    // Distance from center of point sprite (0.0 at center, 0.5 at boundary)
     float dist = length(gl_PointCoord - vec2(0.5));
     if (dist > 0.5) discard;
 
-    // Soft glowing circle profile
-    float intensity = smoothstep(0.5, 0.05, dist);
+    // Glowing spark profile with bright diamond core and soft radiant aura
+    float core = smoothstep(0.18, 0.0, dist);
+    float glow = smoothstep(0.5, 0.08, dist) * 0.7;
+    float intensity = core + glow;
 
-    // Subtle golden highlight aura
-    vec3 finalColor = mix(vColor, vec3(1.0, 0.95, 0.8), 0.18 * intensity);
+    // Keep true vibrant Rangoli pigments, with only the pinpoint center core glinting bright
+    vec3 sparkColor = mix(vColor, vec3(1.0, 0.98, 0.9), core * 0.5);
 
-    gl_FragColor = vec4(finalColor, vAlpha * intensity);
+    gl_FragColor = vec4(sparkColor, vAlpha * intensity * 0.85);
   }
 `;
 
