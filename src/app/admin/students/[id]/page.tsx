@@ -156,6 +156,22 @@ export default function StudentDetailPage({
     }
   };
 
+  const handleDeletePhoto = async (photoId: string) => {
+    try {
+      const res = await fetch(`/api/admin/students/${studentId}/photos?photoId=${photoId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+        setMessage("Photo removed successfully.");
+      } else {
+        setMessage("Failed to remove photo.");
+      }
+    } catch {
+      setMessage("Network error deleting photo.");
+    }
+  };
+
   if (fetchError) {
     return (
       <main className="min-h-screen w-full bg-diwali-night text-diwali-ivory p-8 flex items-center justify-center">
@@ -363,13 +379,21 @@ export default function StudentDetailPage({
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {photos.map((p, idx) => (
-                <div key={p.id} className="relative rounded-xl overflow-hidden bg-black/50 border border-white/10 p-2 space-y-2">
-                  <div className="w-full h-36 bg-stone-900 rounded-lg overflow-hidden flex items-center justify-center">
+                <div key={p.id} className="relative rounded-xl overflow-hidden bg-black/50 border border-white/10 p-2 space-y-2 group">
+                  <div className="w-full h-36 bg-stone-900 rounded-lg overflow-hidden flex items-center justify-center relative">
                     <img
                       src={`/api/media/student-photo/${p.id}`}
                       alt={p.caption || "Student memory"}
                       className="w-full h-full object-cover"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePhoto(p.id)}
+                      className="absolute top-2 right-2 p-1.5 rounded-full bg-red-950/80 hover:bg-red-800 text-red-300 border border-red-500/40 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                      title="Delete Photo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                   <div className="text-[11px] text-diwali-gold font-medium truncate">
                     #{idx + 1} {p.caption || "Memory"}
