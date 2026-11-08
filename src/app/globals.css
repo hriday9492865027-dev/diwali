@@ -53,6 +53,51 @@ body {
   border-image: linear-gradient(135deg, rgba(245, 192, 66, 0.6), rgba(234, 88, 12, 0.3), rgba(245, 192, 66, 0.1)) 1;
 }
 
+/* Sky Lantern Atmospheric Ascent Animation */
+@keyframes lanternAscend {
+  0% {
+    transform: translate3d(0, 80px, 0) scale(0.9);
+    opacity: 0;
+  }
+  4% {
+    transform: translate3d(0, 0px, 0) scale(1);
+    opacity: 1;
+  }
+  20% {
+    transform: translate3d(-18px, -20vh, 0) scale(0.95) rotate(-1.5deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translate3d(16px, -45vh, 0) scale(0.88) rotate(1.5deg);
+    opacity: 0.98;
+  }
+  60% {
+    transform: translate3d(-14px, -70vh, 0) scale(0.78) rotate(-1deg);
+    opacity: 0.95;
+  }
+  75% {
+    /* Disappearing starts smoothly as lantern reaches top of viewport */
+    transform: translate3d(10px, -92vh, 0) scale(0.68) rotate(1deg);
+    opacity: 0.9;
+  }
+  85% {
+    transform: translate3d(-8px, -108vh, 0) scale(0.55) rotate(-0.5deg);
+    opacity: 0.55;
+  }
+  95% {
+    transform: translate3d(5px, -122vh, 0) scale(0.42);
+    opacity: 0.15;
+  }
+  100% {
+    transform: translate3d(0px, -135vh, 0) scale(0.32);
+    opacity: 0;
+  }
+}
+
+.animate-lantern-ascend {
+  animation: lanternAscend 16s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,
