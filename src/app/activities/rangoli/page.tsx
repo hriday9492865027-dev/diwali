@@ -15,6 +15,7 @@ import {
   EyeOff,
   Plus,
   X,
+  Maximize2,
 } from "lucide-react";
 import { DiwaliButton } from "@/components/ui/DiwaliButton";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -40,9 +41,18 @@ const BRUSH_SIZES = [
 
 const SYMMETRIES = [6, 8, 12, 16];
 
+const CANVAS_SIZES = [
+  { label: "Standard", dimension: 600, badge: "600px" },
+  { label: "Large", dimension: 800, badge: "800px" },
+  { label: "Grand Courtyard", dimension: 1000, badge: "1000px" },
+];
+
 export default function RangoliActivityPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Canvas Dimension State (dynamically resizable during or before drawing)
+  const [canvasDimension, setCanvasDimension] = useState(600);
 
   // Drawing tools state
   const [selectedColor, setSelectedColor] = useState("#f5c042");
@@ -59,7 +69,7 @@ export default function RangoliActivityPage() {
   const redoStackRef = useRef<ImageData[]>([]);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Toast message
+  // Toast notification
   const [toast, setToast] = useState<string | null>(null);
 
   // Unsaved changes confirmation dialog
@@ -75,7 +85,7 @@ export default function RangoliActivityPage() {
     action: "CLEAR",
   });
 
-  // Initial Canvas Setup (ONLY runs once on mount - never resets on petal count change!)
+  // Initial Canvas Setup (ONLY runs once on mount)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -103,13 +113,89 @@ export default function RangoliActivityPage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  /**
+   * Seamless Canvas Resizing:
+   * Expands the drawing coordinate space (e.g. 600 -> 800 -> 1000px)
+   * while keeping ALL EXISTING ARTWORK centered, intact, and perfectly aligned!
+   */
+  const handleResizeCanvas = (newDimension: number) => {
+    if (newDimension === canvasDimension) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      setCanvasDimension(newDimension);
+      return;
+    }
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    const oldWidth = canvas.width;
+    const oldHeight = canvas.height;
+
+    // 1. Copy current artwork to an offscreen buffer canvas
+    const bufferCanvas = document.createElement("canvas");
+    bufferCanvas.width = oldWidth;
+    bufferCanvas.height = oldHeight;
+    const bufferCtx = bufferCanvas.getContext("2d");
+    if (bufferCtx) {
+      bufferCtx.drawImage(canvas, 0, 0);
+    }
+
+    // 2. Migrate undo & redo stacks to new dimensions so undo doesn't shrink the canvas
+    const migrateStack = (stack: ImageData[]) => {
+      return stack.map((imgData) => {
+        const tempC = document.createElement("canvas");
+        tempC.width = oldWidth;
+        tempC.height = oldHeight;
+        const tempCtx = tempC.getContext("2d");
+        if (!tempCtx) return imgData;
+        tempCtx.putImageData(imgData, 0, 0);
+
+        const resizedC = document.createElement("canvas");
+        resizedC.width = newDimension;
+        resizedC.height = newDimension;
+        const resizedCtx = resizedC.getContext("2d");
+        if (!resizedCtx) return imgData;
+
+        resizedCtx.fillStyle = "#0a0e27";
+        resizedCtx.fillRect(0, 0, newDimension, newDimension);
+
+        const dx = (newDimension - oldWidth) / 2;
+        const dy = (newDimension - oldHeight) / 2;
+        resizedCtx.drawImage(tempC, dx, dy);
+        return resizedCtx.getImageData(0, 0, newDimension, newDimension);
+      });
+    };
+
+    undoStackRef.current = migrateStack(undoStackRef.current);
+    redoStackRef.current = migrateStack(redoStackRef.current);
+
+    // 3. Update canvas dimensions
+    canvas.width = newDimension;
+    canvas.height = newDimension;
+    setCanvasDimension(newDimension);
+
+    // 4. Fill expanded canvas with background
+    ctx.fillStyle = "#0a0e27";
+    ctx.fillRect(0, 0, newDimension, newDimension);
+
+    // 5. Draw back the preserved artwork perfectly centered
+    const offsetX = (newDimension - oldWidth) / 2;
+    const offsetY = (newDimension - oldHeight) / 2;
+    ctx.drawImage(bufferCanvas, offsetX, offsetY);
+
+    setToast(`Canvas space expanded to ${newDimension}×${newDimension} px (Artwork preserved!)`);
+    setTimeout(() => setToast(null), 3500);
+  };
+
   // High-Resolution PNG Artwork Downloader
   const downloadArtwork = (showSuccessToast = true) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const exportCanvas = document.createElement("canvas");
-    const size = 1200;
+    const size = Math.max(1200, canvas.width);
     exportCanvas.width = size;
     exportCanvas.height = size;
     const ctx = exportCanvas.getContext("2d");
@@ -178,8 +264,8 @@ export default function RangoliActivityPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cx = 300;
-    const cy = 300;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
 
     ctx.strokeStyle = selectedColor;
     ctx.lineWidth = brushSize;
@@ -226,7 +312,7 @@ export default function RangoliActivityPage() {
     if (undoStackRef.current.length >= 30) {
       undoStackRef.current.shift();
     }
-    undoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
+    undoStackRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
     setCanUndo(true);
 
     // Any new stroke clears the redo stack
@@ -236,7 +322,7 @@ export default function RangoliActivityPage() {
     setHasUnsavedChanges(true);
 
     const rect = canvas.getBoundingClientRect();
-    const scale = 600 / rect.width;
+    const scale = canvas.width / rect.width;
 
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
@@ -253,7 +339,7 @@ export default function RangoliActivityPage() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const scale = 600 / rect.width;
+    const scale = canvas.width / rect.width;
 
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
@@ -283,7 +369,7 @@ export default function RangoliActivityPage() {
     if (redoStackRef.current.length >= 30) {
       redoStackRef.current.shift();
     }
-    redoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
+    redoStackRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
     setCanRedo(true);
 
     // Pop and apply previous state from undo stack
@@ -311,7 +397,7 @@ export default function RangoliActivityPage() {
     if (undoStackRef.current.length >= 30) {
       undoStackRef.current.shift();
     }
-    undoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
+    undoStackRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
     setCanUndo(true);
 
     // Pop and apply next state from redo stack
@@ -331,7 +417,7 @@ export default function RangoliActivityPage() {
     if (!ctx) return;
 
     ctx.fillStyle = "#0a0e27";
-    ctx.fillRect(0, 0, 600, 600);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     undoStackRef.current = [];
     redoStackRef.current = [];
@@ -545,51 +631,117 @@ export default function RangoliActivityPage() {
       </header>
 
       {/* Main Canvas & Toolbox */}
-      <div className="relative z-10 max-w-4xl mx-auto w-full flex flex-col items-center my-auto py-2">
+      <div className="relative z-10 max-w-5xl mx-auto w-full flex flex-col items-center my-auto py-2">
         {/* Controls Toolbar */}
-        <div className="w-full flex flex-wrap items-center justify-between gap-3 mb-3 p-3 rounded-2xl bg-black/50 border border-diwali-gold/30 backdrop-blur-md">
-          {/* Color Palette */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            {PALETTE_COLORS.map((c) => (
+        <div className="w-full flex flex-col gap-2.5 mb-3 p-3.5 rounded-2xl bg-black/50 border border-diwali-gold/30 backdrop-blur-md">
+          {/* Row 1: Colors & Brushes & Undo/Redo & Guidelines */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Color Palette */}
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+              {PALETTE_COLORS.map((c) => (
+                <button
+                  key={c.name}
+                  onClick={() => setSelectedColor(c.hex)}
+                  className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                    selectedColor === c.hex
+                      ? "scale-125 border-white shadow-glow-gold z-10"
+                      : "border-transparent opacity-80 hover:opacity-100"
+                  }`}
+                  style={{ backgroundColor: c.hex }}
+                  title={c.name}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Brush Sizes */}
+              <div className="flex items-center gap-1 text-[11px] text-diwali-muted font-semibold">
+                <span className="mr-1">Brush:</span>
+                {BRUSH_SIZES.map((b) => (
+                  <button
+                    key={b.size}
+                    onClick={() => setBrushSize(b.size)}
+                    className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${
+                      brushSize === b.size
+                        ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold"
+                        : "border-white/10 text-white/60 hover:text-white"
+                    }`}
+                    title={`${b.label} (${b.size}px)`}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="h-4 w-px bg-white/20 hidden sm:block" />
+
+              {/* Undo & Redo Actions */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                  title="Undo last stroke"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                  title="Redo stroke"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Toggle Guidelines */}
               <button
-                key={c.name}
-                onClick={() => setSelectedColor(c.hex)}
-                className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                  selectedColor === c.hex
-                    ? "scale-125 border-white shadow-glow-gold z-10"
-                    : "border-transparent opacity-80 hover:opacity-100"
+                type="button"
+                onClick={() => setShowGuides(!showGuides)}
+                className={`p-1.5 rounded-lg border text-xs transition-colors ${
+                  showGuides
+                    ? "border-diwali-gold/40 text-diwali-gold bg-diwali-gold/10"
+                    : "border-white/15 text-diwali-muted hover:text-white"
                 }`}
-                style={{ backgroundColor: c.hex }}
-                title={c.name}
-              />
-            ))}
+                title={showGuides ? "Hide symmetry guidelines" : "Show symmetry guidelines"}
+              >
+                {showGuides ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Brush Sizes */}
-            <div className="flex items-center gap-1 text-[11px] text-diwali-muted font-semibold">
-              <span className="mr-1">Brush:</span>
-              {BRUSH_SIZES.map((b) => (
+          {/* Row 2: Dynamic Canvas Space Size Selector & Petals Symmetries */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10">
+            {/* Canvas Space Size Selector */}
+            <div className="flex items-center gap-1.5 text-[11px] text-diwali-muted font-semibold">
+              <span className="mr-1 flex items-center gap-1 text-diwali-gold">
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Space Size:</span>
+              </span>
+              {CANVAS_SIZES.map((sizeOpt) => (
                 <button
-                  key={b.size}
-                  onClick={() => setBrushSize(b.size)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${
-                    brushSize === b.size
-                      ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold"
-                      : "border-white/10 text-white/60 hover:text-white"
+                  key={sizeOpt.dimension}
+                  type="button"
+                  onClick={() => handleResizeCanvas(sizeOpt.dimension)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] border transition-all ${
+                    canvasDimension === sizeOpt.dimension
+                      ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold shadow-glow-gold scale-105"
+                      : "border-white/10 text-white/60 hover:text-white hover:border-white/30"
                   }`}
-                  title={`${b.label} (${b.size}px)`}
+                  title={`Expand canvas to ${sizeOpt.badge} (Existing art is preserved and centered!)`}
                 >
-                  {b.label}
+                  {sizeOpt.label} ({sizeOpt.badge})
                 </button>
               ))}
             </div>
 
-            <div className="h-4 w-px bg-white/20 hidden sm:block" />
-
-            {/* Symmetry Controls (Petals) - Never resets existing art! */}
+            {/* Symmetry Controls (Petals) */}
             <div className="flex items-center gap-1 text-[11px] text-diwali-muted font-semibold">
-              <span className="mr-1">Petals:</span>
+              <span className="mr-1 text-diwali-gold">Petals:</span>
               {SYMMETRIES.map((sym) => (
                 <button
                   key={sym}
@@ -605,51 +757,20 @@ export default function RangoliActivityPage() {
                 </button>
               ))}
             </div>
-
-            <div className="h-4 w-px bg-white/20 hidden sm:block" />
-
-            {/* Undo & Redo Actions */}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleUndo}
-                disabled={!canUndo}
-                className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-25 disabled:pointer-events-none transition-colors"
-                title="Undo last stroke"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRedo}
-                disabled={!canRedo}
-                className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-25 disabled:pointer-events-none transition-colors"
-                title="Redo stroke"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Toggle Guidelines */}
-            <button
-              type="button"
-              onClick={() => setShowGuides(!showGuides)}
-              className={`p-1.5 rounded-lg border text-xs transition-colors ${
-                showGuides
-                  ? "border-diwali-gold/40 text-diwali-gold bg-diwali-gold/10"
-                  : "border-white/15 text-diwali-muted hover:text-white"
-              }`}
-              title={showGuides ? "Hide symmetry guidelines" : "Show symmetry guidelines"}
-            >
-              {showGuides ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            </button>
           </div>
         </div>
 
-        {/* Drawing Canvas Container */}
-        <div className="relative rounded-2xl overflow-hidden border-2 border-diwali-gold/40 shadow-glow-gold bg-[#0a0e27]">
-          {/* User Drawing Canvas (Never cleared on petal count or guide toggle) */}
+        {/* Drawing Canvas Container (Dynamic responsive scaling based on space size) */}
+        <div
+          className={`relative rounded-3xl overflow-hidden border-2 border-diwali-gold/40 shadow-glow-gold bg-[#0a0e27] w-full transition-all duration-300 aspect-square ${
+            canvasDimension === 600
+              ? "max-w-[340px] sm:max-w-[480px] md:max-w-[560px]"
+              : canvasDimension === 800
+              ? "max-w-[360px] sm:max-w-[580px] md:max-w-[700px]"
+              : "max-w-[380px] sm:max-w-[660px] md:max-w-[820px]"
+          }`}
+        >
+          {/* User Drawing Canvas */}
           <canvas
             ref={canvasRef}
             onMouseDown={startDrawing}
@@ -659,39 +780,46 @@ export default function RangoliActivityPage() {
             onTouchStart={startDrawing}
             onTouchMove={draw}
             onTouchEnd={stopDrawing}
-            className="w-[320px] h-[320px] sm:w-[460px] sm:h-[460px] md:w-[520px] md:h-[520px] cursor-crosshair touch-none"
+            className="w-full h-full cursor-crosshair touch-none block"
           />
 
-          {/* Symmetrical Guidelines SVG Overlay (Pointer-events-none, reactive to petal count) */}
+          {/* Symmetrical Guidelines SVG Overlay (Pointer-events-none, reactive to canvas space size and petal count) */}
           {showGuides && (
             <svg
-              viewBox="0 0 600 600"
+              viewBox={`0 0 ${canvasDimension} ${canvasDimension}`}
               className="absolute inset-0 w-full h-full pointer-events-none"
             >
               {/* Concentric Guide Circles */}
-              {[60, 120, 180, 240, 280].map((r) => (
-                <circle
-                  key={r}
-                  cx="300"
-                  cy="300"
-                  r={r}
-                  fill="none"
-                  stroke="rgba(245, 192, 66, 0.12)"
-                  strokeWidth="1"
-                  strokeDasharray="4 4"
-                />
-              ))}
+              {Array.from({ length: 5 }).map((_, idx) => {
+                const center = canvasDimension / 2;
+                const step = (center - 24) / 5;
+                const r = Math.round(step * (idx + 1));
+                return (
+                  <circle
+                    key={r}
+                    cx={center}
+                    cy={center}
+                    r={r}
+                    fill="none"
+                    stroke="rgba(245, 192, 66, 0.12)"
+                    strokeWidth="1"
+                    strokeDasharray="4 4"
+                  />
+                );
+              })}
 
               {/* Radial Spokes based on active symmetryCount */}
               {Array.from({ length: symmetryCount }).map((_, i) => {
+                const center = canvasDimension / 2;
+                const radius = center - 20;
                 const angle = (i * Math.PI * 2) / symmetryCount;
-                const x2 = 300 + Math.cos(angle) * 285;
-                const y2 = 300 + Math.sin(angle) * 285;
+                const x2 = center + Math.cos(angle) * radius;
+                const y2 = center + Math.sin(angle) * radius;
                 return (
                   <line
                     key={i}
-                    x1="300"
-                    y1="300"
+                    x1={center}
+                    y1={center}
                     x2={x2}
                     y2={y2}
                     stroke="rgba(245, 192, 66, 0.14)"
@@ -702,13 +830,20 @@ export default function RangoliActivityPage() {
               })}
 
               {/* Center Sacred Bindu */}
-              <circle cx="300" cy="300" r="4" fill="rgba(245, 192, 66, 0.5)" />
+              <circle
+                cx={canvasDimension / 2}
+                cy={canvasDimension / 2}
+                r="4.5"
+                fill="rgba(245, 192, 66, 0.6)"
+              />
             </svg>
           )}
         </div>
 
-        <div className="flex items-center justify-between w-full max-w-[520px] text-[11px] text-diwali-muted/80 tracking-wider mt-2.5 px-1">
-          <span>✨ Draw with mouse or touch. Radiating in {symmetryCount}-fold symmetry.</span>
+        <div className="flex items-center justify-between w-full max-w-[820px] text-[11px] text-diwali-muted/80 tracking-wider mt-2.5 px-2">
+          <span>
+            ✨ Symmetrical Mandala Space ({canvasDimension}×{canvasDimension}px) • Radiates in {symmetryCount}-fold symmetry.
+          </span>
           {hasUnsavedChanges && (
             <span className="text-amber-300 font-medium animate-pulse flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />

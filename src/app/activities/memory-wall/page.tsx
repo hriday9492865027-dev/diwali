@@ -91,6 +91,9 @@ export default function MemoryWallActivityPage() {
                     <img
                       src={photo.url}
                       alt={photo.caption}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = "/test-portraits/sample-portrait-1.jpg";
+                      }}
                       className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
                     />
                     <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
@@ -128,6 +131,9 @@ export default function MemoryWallActivityPage() {
               <img
                 src={activePhoto.url}
                 alt={activePhoto.caption}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = "/test-portraits/sample-portrait-1.jpg";
+                }}
                 className="w-full h-full object-cover"
               />
             </div>
