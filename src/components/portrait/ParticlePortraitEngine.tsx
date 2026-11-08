@@ -191,7 +191,7 @@ export function ParticlePortraitEngine({
       try {
         const isMobile = window.innerWidth < 768;
         const defaultBudget = isMobile ? 5000 : 10000;
-        const budget = mode === "rangoli" ? (isMobile ? 6500 : 12000) : defaultBudget;
+        const budget = mode === "rangoli" ? (isMobile ? 5000 : 8500) : defaultBudget;
         const buffers = await processImageToParticleBuffers(photoUrl, budget, mode);
 
         if (!geometryRef.current) {
@@ -564,8 +564,8 @@ export function ParticlePortraitEngine({
         if (pointsMeshRef.current) {
           pointsMeshRef.current.visible = true;
         }
-        // Sparks stay crystallized in Rangoli geometry for 2 to 3 seconds
-        const holdDur = 2.8;
+        // Sparks stay crystallized in Rangoli geometry for exactly 1.0 second before starting to fall
+        const holdDur = 1.0;
         if (materialRef.current) {
           materialRef.current.uniforms.uBlastProgress.value = 1.0;
           materialRef.current.uniforms.uExplosionProgress.value = 1.0;
@@ -881,14 +881,14 @@ export function ParticlePortraitEngine({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-[88vh] md:h-[90vh] flex flex-col justify-between overflow-hidden select-none"
+      className="relative w-full min-h-screen flex flex-col justify-between select-none"
     >
-      {/* Three.js Particle Canvas with Interactive Forcefield */}
+      {/* Three.js Particle Canvas with Interactive Forcefield (fixed so it seamlessly covers viewport while scrolling) */}
       <canvas
         ref={canvasRef}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
-        className="absolute inset-0 w-full h-full z-0 pointer-events-auto cursor-crosshair"
+        className="fixed inset-0 w-full h-full z-0 pointer-events-auto cursor-crosshair"
       />
 
       {/* Top Controls Overlay */}
@@ -922,9 +922,9 @@ export function ParticlePortraitEngine({
 
       {/* Bottom Interface: Mode-Specific Gallery or Standard Portrait Controls */}
       {mode === "rangoli" ? (
-        /* Rangoli Mode: Saved Arts Drawer with Click-to-Blast Action */
-        <div className="relative z-20 w-full max-w-5xl mx-auto p-4 pointer-events-auto">
-          <div className="p-3.5 md:p-4 rounded-2xl bg-black/75 backdrop-blur-md border border-diwali-gold/35 shadow-2xl space-y-2.5">
+        /* Rangoli Mode: Saved Arts Drawer pinned to the bottom */
+        <div className="relative z-20 w-full max-w-5xl mx-auto p-4 pb-6 mt-auto pointer-events-auto">
+          <div className="p-3.5 md:p-4 rounded-2xl bg-black/80 backdrop-blur-md border border-diwali-gold/35 shadow-2xl space-y-2.5">
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-diwali-gold animate-pulse" />
@@ -961,7 +961,7 @@ export function ParticlePortraitEngine({
             </div>
 
             {/* Horizontal Scrollable Thumbnails Carousel */}
-            <div className="flex items-center gap-3 overflow-x-auto pb-1 pt-1">
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 custom-scrollbar">
               {photos.map((item, idx) => (
                 <div
                   key={item.id}

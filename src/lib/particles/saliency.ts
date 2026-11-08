@@ -26,7 +26,8 @@ export async function processImageToParticleBuffers(
 
     img.onload = () => {
       try {
-        const targetWidth = 240;
+        // In rangoli mode: sample at high resolution (up to 600px) so fine 2px hairline strokes do not smear into bold bands
+        const targetWidth = mode === "rangoli" ? Math.min(img.naturalWidth || 600, 600) : 240;
         const targetHeight = Math.round((img.naturalHeight / img.naturalWidth) * targetWidth);
 
         const canvas = document.createElement("canvas");
@@ -174,7 +175,8 @@ export async function processImageToParticleBuffers(
           // Target 3D coordinates (centered)
           const tx = (c.x - targetWidth / 2) * scale;
           const ty = -(c.y - targetHeight / 2) * scale; // Invert Y for WebGL
-          const tz = (Math.random() - 0.5) * 0.25;
+          // In rangoli mode: flat tz=0 prevents 3D perspective spread that bloats fine lines
+          const tz = mode === "rangoli" ? 0.0 : (Math.random() - 0.5) * 0.25;
 
           targetPositions[i * 3] = tx;
           targetPositions[i * 3 + 1] = ty;
@@ -197,8 +199,8 @@ export async function processImageToParticleBuffers(
           colors[i * 3 + 1] = c.g;
           colors[i * 3 + 2] = c.b;
 
-          // Calibrated particle point size: fine, crisp starlight sparks
-          sizes[i] = Math.random() * 0.7 + 1.1;
+          // Calibrated particle point size: fine delicate embers for rangoli to preserve fine strokes
+          sizes[i] = mode === "rangoli" ? (Math.random() * 0.22 + 0.45) : (Math.random() * 0.7 + 1.1);
           alphas[i] = 0.9;
         }
 

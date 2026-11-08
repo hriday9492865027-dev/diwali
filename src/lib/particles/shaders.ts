@@ -54,11 +54,12 @@ export const portraitVertexShader = `
       currentPos += jitter;
     }
 
-    // 2. Starlight Twinkle & Shimmer during 2-3 second Hold Phase (Rangoli fully crystallized)
+    // 2. Starlight Twinkle & Shimmer during Hold Phase (Rangoli fully crystallized)
     if (blastEase >= 0.85 && uFallProgress == 0.0) {
       float idleTime = uTime * 0.8;
-      float noiseX = sin(currentPos.y * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.012 * uNoiseStrength;
-      float noiseY = cos(currentPos.x * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.012 * uNoiseStrength;
+      // Gentle breathing without displacing delicate fine stroke lines
+      float noiseX = sin(currentPos.y * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.003 * uNoiseStrength;
+      float noiseY = cos(currentPos.x * 3.0 + idleTime + hash(targetPosition) * 6.28) * 0.003 * uNoiseStrength;
       currentPos.x += noiseX;
       currentPos.y += noiseY;
 
@@ -107,12 +108,12 @@ export const portraitVertexShader = `
     vec4 mvPosition = modelViewMatrix * vec4(currentPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Attenuated point size based on camera distance and pixel ratio
-    float baseSize = size * (22.0 / -mvPosition.z) * uPixelRatio;
+    // Attenuated point size based on camera distance and pixel ratio (calibrated for delicate hairline starlight embers)
+    float baseSize = size * (16.0 / -mvPosition.z) * uPixelRatio;
 
     // Initial detonation ignition flash
     if (blastP < 0.25) {
-      baseSize *= (1.0 + (1.0 - blastP / 0.25) * 1.0);
+      baseSize *= (1.0 + (1.0 - blastP / 0.25) * 0.7);
     }
 
     // Embers shrink as they die down during gravity fall
@@ -120,7 +121,7 @@ export const portraitVertexShader = `
       baseSize *= clamp(1.0 - uFallProgress * 0.65, 0.2, 1.0);
     }
 
-    gl_PointSize = clamp(baseSize, 1.5, 24.0);
+    gl_PointSize = clamp(baseSize, 1.0, 16.0);
   }
 `;
 

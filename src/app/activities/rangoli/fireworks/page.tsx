@@ -286,7 +286,7 @@ function RangoliFireworksContent() {
   }
 
   return (
-    <main className="relative min-h-screen w-full bg-gradient-to-b from-diwali-night via-diwali-navy to-diwali-night text-diwali-ivory overflow-hidden select-none">
+    <main className="relative min-h-screen w-full bg-gradient-to-b from-diwali-night via-diwali-navy to-diwali-night text-diwali-ivory overflow-y-auto overflow-x-hidden select-none">
       {/* Top Auspicious Banner */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-diwali-gold/15 border border-diwali-gold/30 backdrop-blur-md text-[11px] text-diwali-gold font-bold tracking-widest uppercase">

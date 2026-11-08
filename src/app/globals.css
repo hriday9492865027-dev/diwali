@@ -126,6 +126,22 @@ body {
   animation: rocketAscent 2.0s cubic-bezier(0.12, 0.75, 0.25, 1) forwards;
 }
 
+/* Custom sleek golden horizontal scrollbar for gallery */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(245, 192, 66, 0.4);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 192, 66, 0.75);
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,
