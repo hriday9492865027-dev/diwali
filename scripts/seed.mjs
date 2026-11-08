@@ -1,58 +1,73 @@
+import dns from 'node:dns';
+import { setGlobalDispatcher, Agent } from 'undici';
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { pgTable, text, timestamp, boolean, uuid, integer } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, uuid, integer, varchar } from 'drizzle-orm/pg-core';
 import { hashPassword } from '../src/lib/auth/password.ts';
+
+// 1. Google DNS Resolver
+const resolver = new dns.promises.Resolver();
+resolver.setServers(['8.8.8.8', '1.1.1.1']);
+
+function customLookup(hostname, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  resolver.resolve4(hostname).then(
+    (addresses) => {
+      if (options && options.all) {
+        callback(null, addresses.map((addr) => ({ address: addr, family: 4 })));
+      } else {
+        callback(null, addresses[0], 4);
+      }
+    },
+    (err) => {
+      dns.lookup(hostname, options, callback);
+    }
+  );
+}
+
+setGlobalDispatcher(
+  new Agent({
+    connect: {
+      lookup: customLookup,
+    },
+  })
+);
 
 const students = pgTable("students", {
   id: uuid("id").primaryKey().defaultRandom(),
-  rollNumber: text("roll_number").notNull().unique(),
-  displayName: text("display_name").notNull(),
+  rollNumber: varchar("roll_number", { length: 64 }).notNull().unique(),
+  displayName: varchar("display_name", { length: 128 }).notNull(),
   passwordHash: text("password_hash").notNull(),
   greetingMessage: text("greeting_message"),
   secretMessage: text("secret_message"),
   isActive: boolean("is_active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 const administrators = pgTable("administrators", {
   id: uuid("id").primaryKey().defaultRandom(),
-  username: text("username").notNull().unique(),
+  username: varchar("username", { length: 64 }).notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-const studentPhotos = pgTable("student_photos", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  studentId: uuid("student_id").notNull(),
-  blobUrl: text("blob_url").notNull(),
-  blobPathname: text("blob_pathname").notNull(),
-  caption: text("caption"),
-  sortOrder: integer("sort_order").notNull().default(0),
-  isPrimary: boolean("is_primary").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 async function main() {
   const connectionString =
     process.env.DATABASE_URL ||
     process.env.POSTGRES_URL ||
-    process.env.STORAGE_URL ||
-    process.env.STORAGE_POSTGRES_URL;
-  if (!connectionString) {
-    console.error('❌ Error: DATABASE_URL environment variable is missing.');
-    console.log('To seed your database, run:');
-    console.log('  $env:DATABASE_URL="postgresql://..." ; npm run seed');
-    process.exit(1);
-  }
+    "postgresql://neondb_owner:npg_9OPRgZBG7raA@ep-steep-credit-azyyj27h-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
 
-  console.log('🔌 Connecting to Neon PostgreSQL...');
+  console.log('🔌 Connecting to Neon PostgreSQL for Seeding...');
   const sql = neon(connectionString);
   const db = drizzle(sql);
 
-  console.log('🌱 Seeding initial administrator account...');
+  console.log('🌱 Seeding administrator account...');
   const defaultAdminUser = process.env.ADMIN_INITIAL_USERNAME || 'admin';
   const defaultAdminPass = process.env.ADMIN_INITIAL_PASSWORD || 'DiwaliAdmin2026!Master';
   const adminHash = await hashPassword(defaultAdminPass);
@@ -118,11 +133,10 @@ async function main() {
     console.log(`✓ Student provisioned: ${s.rollNumber} (${s.displayName})`);
   }
 
-  console.log('\n✨ Database seeding completed successfully!');
+  console.log('\n✨ Database seeding completed successfully on Neon PostgreSQL!');
 }
 
 main().catch((err) => {
   console.error('Fatal seeding error:', err);
   process.exit(1);
 });
-
