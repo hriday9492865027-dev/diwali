@@ -280,40 +280,76 @@ export function ParticlePortraitEngine({
     pointsMeshRef.current = points;
     scene.add(points);
 
-    // 5. Rocket Mesh Group (ascending fiery comet matching reference video)
+    // 5. Rocket Tracer Group: slender, needle-thin luminous comet streak matching video
     const rocketGroup = new THREE.Group();
     rocketGroup.visible = false;
 
-    // Glowing White-Hot Core Spark
-    const coreGeom = new THREE.SphereGeometry(0.045, 12, 12);
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const coreMesh = new THREE.Mesh(coreGeom, coreMat);
-    coreMesh.position.y = 0.05;
-    rocketGroup.add(coreMesh);
-
-    // Radiant Golden Corona Flare
-    const coronaGeom = new THREE.SphereGeometry(0.12, 12, 12);
-    const coronaMat = new THREE.MeshBasicMaterial({
-      color: 0xffc107,
+    // Slender vertical quad ribbon (width 0.035, height 0.55)
+    // Tapered luminous light streak: white-hot glint at tip, fading downward into warm gold
+    const tracerGeom = new THREE.PlaneGeometry(0.035, 0.55);
+    tracerGeom.translate(0, -0.275, 0); // Origin (0,0,0) is at the leading rocket tip
+    const tracerMat = new THREE.ShaderMaterial({
       transparent: true,
-      opacity: 0.75,
+      depthWrite: false,
       blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        void main() {
+          float hDist = abs(vUv.x - 0.5) * 2.0;
+          float taper = mix(0.25, 1.0, vUv.y);
+          float horizontalCore = smoothstep(1.0, 0.0, hDist / taper);
+          float verticalFade = pow(vUv.y, 1.7);
+          vec3 tipColor = vec3(1.0, 0.99, 0.95);
+          vec3 tailColor = vec3(1.0, 0.65, 0.15);
+          vec3 color = mix(tailColor, tipColor, pow(vUv.y, 2.0));
+          float alpha = horizontalCore * verticalFade * 0.95;
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
     });
-    const coronaMesh = new THREE.Mesh(coronaGeom, coronaMat);
-    coronaMesh.position.y = 0.05;
-    rocketGroup.add(coronaMesh);
+    const tracerMesh = new THREE.Mesh(tracerGeom, tracerMat);
+    rocketGroup.add(tracerMesh);
 
-    // Fiery Jet Flame Streamer
-    const flameGeom = new THREE.CylinderGeometry(0.012, 0.035, 0.32, 8);
-    const flameMat = new THREE.MeshBasicMaterial({
-      color: 0xf97316,
+    // Pinpoint white-hot leading spark glint at tip (0, 0, 0)
+    const tipSparkGeom = new THREE.BufferGeometry();
+    tipSparkGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    const tipSparkMat = new THREE.ShaderMaterial({
       transparent: true,
-      opacity: 0.9,
+      depthWrite: false,
       blending: THREE.AdditiveBlending,
+      uniforms: {
+        uPixelRatio: { value: renderer.getPixelRatio() },
+      },
+      vertexShader: `
+        uniform float uPixelRatio;
+        void main() {
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          gl_PointSize = clamp(18.0 * (22.0 / -mvPosition.z) * uPixelRatio, 3.0, 36.0);
+        }
+      `,
+      fragmentShader: `
+        void main() {
+          float dist = length(gl_PointCoord - vec2(0.5));
+          if (dist > 0.5) discard;
+          float core = smoothstep(0.18, 0.0, dist);
+          float glow = smoothstep(0.5, 0.05, dist);
+          vec3 col = mix(vec3(1.0, 0.85, 0.3), vec3(1.0, 1.0, 1.0), core);
+          gl_FragColor = vec4(col, core + glow * 0.7);
+        }
+      `,
     });
-    const flameMesh = new THREE.Mesh(flameGeom, flameMat);
-    flameMesh.position.y = -0.16;
-    rocketGroup.add(flameMesh);
+    const tipSparkMesh = new THREE.Points(tipSparkGeom, tipSparkMat);
+    rocketGroup.add(tipSparkMesh);
 
     rocketMeshRef.current = rocketGroup;
     scene.add(rocketGroup);
@@ -485,9 +521,9 @@ export function ParticlePortraitEngine({
           rocketMeshRef.current.position.y = easeY;
           rocketMeshRef.current.position.x = Math.sin(progress * 4.0) * 0.03;
 
-          // Rocket flame flicker
-          if (flameMesh) {
-            flameMesh.scale.y = 0.8 + Math.random() * 0.5;
+          // Rocket tracer light streak subtle shimmer
+          if (tracerMesh) {
+            tracerMesh.scale.y = 0.9 + Math.random() * 0.2;
           }
 
           if (progress >= 1.0) {
@@ -635,12 +671,10 @@ export function ParticlePortraitEngine({
       renderer.dispose();
       geometry.dispose();
       material.dispose();
-      coreGeom.dispose();
-      coreMat.dispose();
-      coronaGeom.dispose();
-      coronaMat.dispose();
-      flameGeom.dispose();
-      flameMat.dispose();
+      tracerGeom.dispose();
+      tracerMat.dispose();
+      tipSparkGeom.dispose();
+      tipSparkMat.dispose();
       trailGeometry.dispose();
       trailMaterial.dispose();
     };
@@ -950,14 +984,14 @@ export function ParticlePortraitEngine({
                     <p className="text-[9px] text-diwali-gold font-mono uppercase">
                       {currentPhotoIndex === idx
                         ? state === "ROCKET_LAUNCH"
-                          ? "🚀 Ascending..."
+                          ? "Ascending..."
                           : state === "BLAST_EXPANSION"
-                          ? "💥 Detonating..."
+                          ? "Detonating..."
                           : state === "BURST_HOLD"
-                          ? "✨ Glowing Sacred Art"
+                          ? "Glowing Sacred Art"
                           : state === "GRAVITY_FALL"
-                          ? "🌌 Falling Sparks"
-                          : "✨ Active Burst"
+                          ? "Cascading Embers..."
+                          : "Active Burst"
                         : "Tap to Fire"}
                     </p>
                   </div>

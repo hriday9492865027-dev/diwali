@@ -104,6 +104,28 @@ body {
   animation: lanternAscend 16s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
 }
 
+/* Firework Rocket Tracer Ascent matching reference video */
+@keyframes rocketAscent {
+  0% {
+    transform: translate(-50%, 100vh);
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, 42vh);
+    opacity: 0.9;
+  }
+}
+
+.animate-rocket-ascent {
+  animation: rocketAscent 2.0s cubic-bezier(0.12, 0.75, 0.25, 1) forwards;
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,

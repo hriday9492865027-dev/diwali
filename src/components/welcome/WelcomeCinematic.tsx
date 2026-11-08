@@ -142,13 +142,20 @@ export function WelcomeCinematic({ displayName }: WelcomeCinematicProps) {
         </button>
       </div>
 
-      {/* Stage: Rocket Ascent */}
+      {/* Stage: Rocket Ascent - Slender luminous comet tracer matching reference video */}
       {stage === "LAUNCH" && (
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center animate-rocket-ascent">
-          {/* Glowing Rocket Head */}
-          <div className="w-4 h-8 bg-gradient-to-t from-orange-500 to-yellow-200 rounded-t-full shadow-glow-flame" />
-          {/* Flame & Spark Trail */}
-          <div className="w-1.5 h-16 bg-gradient-to-b from-yellow-300 via-orange-500 to-transparent blur-[1px] animate-pulse" />
+        <div className="absolute top-0 left-1/2 z-20 pointer-events-none flex flex-col items-center animate-rocket-ascent">
+          {/* Intense White-Hot Comet Head */}
+          <div className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_12px_#ffffff,0_0_24px_#f5c042,0_0_40px_#f97316]" />
+          {/* Needle-Thin Luminous Tracer Streak */}
+          <div className="w-[2.5px] h-28 bg-gradient-to-b from-white via-amber-400 to-transparent blur-[0.5px]" />
+          {/* Cascading Fiery Trail Embers */}
+          <div className="relative w-full flex flex-col items-center">
+            <span className="absolute -top-6 w-1.5 h-1.5 rounded-full bg-amber-200 animate-ping opacity-80" />
+            <span className="absolute -top-12 w-1 h-1 rounded-full bg-orange-400 animate-pulse opacity-90" />
+            <span className="absolute -top-18 w-1 h-1 rounded-full bg-yellow-300 opacity-70" />
+            <span className="absolute -top-24 w-1.5 h-1.5 rounded-full bg-amber-500 opacity-60" />
+          </div>
         </div>
       )}
 

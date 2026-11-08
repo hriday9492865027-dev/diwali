@@ -937,7 +937,7 @@ export default function RangoliActivityPage() {
             title="Launch fireworks that detonate in the shape and vivid colors of your Rangoli artwork!"
           >
             <Flame className="w-4 h-4 md:w-5 md:h-5 fill-amber-950 text-amber-950" />
-            <span>🎆 Fire The Rangoli (Cracker Blast)</span>
+            <span>Fire The Rangoli (Fireworks Blast)</span>
           </button>
 
           <Link
