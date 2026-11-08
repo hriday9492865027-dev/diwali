@@ -27,3 +27,4 @@ Comprehensive architectural and product specifications are located in `/docs`:
 - [Implementation Roadmap](docs/IMPLEMENTATION_ROADMAP.md)
 - [Quality Assurance](docs/QUALITY_ASSURANCE.md)
 - [Visual Reference Guide](docs/VISUAL_REFERENCE_GUIDE.md)
+
