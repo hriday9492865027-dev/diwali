@@ -4,6 +4,9 @@ export const portraitVertexShader = `
   uniform float uDissolveProgress;
   uniform float uNoiseStrength;
   uniform float uPixelRatio;
+  uniform vec2 uMouse;
+  uniform float uMouseRadius;
+  uniform float uMouseStrength;
 
   attribute vec3 targetPosition;
   attribute vec3 color;
@@ -37,6 +40,17 @@ export const portraitVertexShader = `
       float breathe = sin(idleTime * 0.5) * 0.015;
       mixedPos.x += noiseX;
       mixedPos.y += noiseY + breathe;
+
+      // Interactive forcefield cursor displacement (Forcefield technique)
+      if (uMouseRadius > 0.0) {
+        vec2 diff = mixedPos.xy - uMouse;
+        float dist = length(diff);
+        if (dist < uMouseRadius && dist > 0.0001) {
+          float force = (1.0 - dist / uMouseRadius) * uMouseStrength;
+          vec2 pushDir = normalize(diff);
+          mixedPos.xy += pushDir * force;
+        }
+      }
     }
 
     // 3. Outward dispersion upon dissolve

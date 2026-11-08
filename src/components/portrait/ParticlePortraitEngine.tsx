@@ -6,7 +6,7 @@ import { ParticleState, PhotoAsset } from "@/lib/particles/types";
 import { processImageToParticleBuffers } from "@/lib/particles/saliency";
 import { portraitVertexShader, portraitFragmentShader } from "@/lib/particles/shaders";
 import { DiwaliButton } from "@/components/ui/DiwaliButton";
-import { Sparkles, ArrowLeft, Volume2, VolumeX, RotateCw, Image as ImageIcon } from "lucide-react";
+import { Sparkles, ArrowLeft, Volume2, VolumeX, RotateCw, Image as ImageIcon, Download } from "lucide-react";
 import Link from "next/link";
 
 interface ParticlePortraitEngineProps {
@@ -141,6 +141,7 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
       antialias: true,
       alpha: true,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: true,
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
@@ -159,6 +160,9 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
         uDissolveProgress: { value: 0.0 },
         uNoiseStrength: { value: 1.0 },
         uPixelRatio: { value: renderer.getPixelRatio() },
+        uMouse: { value: new THREE.Vector2(-999, -999) },
+        uMouseRadius: { value: 0.75 },
+        uMouseStrength: { value: 0.16 },
       },
     });
     materialRef.current = material;
@@ -325,12 +329,123 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
     }
   };
 
+  // Interactive Forcefield Mouse Displacement
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !materialRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Perspective projection at z=6.0, fov=45
+    const aspect = rect.width / rect.height;
+    const vFovRad = (45 * Math.PI) / 360;
+    const halfH = Math.tan(vFovRad) * 6.0;
+    const halfW = halfH * aspect;
+
+    materialRef.current.uniforms.uMouse.value.set(ndcX * halfW, ndcY * halfH);
+  };
+
+  const handlePointerLeave = () => {
+    if (materialRef.current) {
+      materialRef.current.uniforms.uMouse.value.set(-999, -999);
+    }
+  };
+
+  // Souvenir Snapshot Generator
+  const handleDownloadSouvenir = () => {
+    if (!canvasRef.current) return;
+    const srcCanvas = canvasRef.current;
+    const souvenir = document.createElement("canvas");
+    souvenir.width = 1080;
+    souvenir.height = 1350;
+    const ctx = souvenir.getContext("2d");
+    if (!ctx) return;
+
+    // 1. Dark festive background
+    const bgGrad = ctx.createRadialGradient(540, 675, 50, 540, 675, 750);
+    bgGrad.addColorStop(0, "#161b33");
+    bgGrad.addColorStop(0.5, "#0b0f19");
+    bgGrad.addColorStop(1, "#030712");
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, 1080, 1350);
+
+    // 2. Golden Ornamental Borders
+    ctx.strokeStyle = "rgba(245, 158, 11, 0.4)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(36, 36, 1080 - 72, 1350 - 72);
+
+    ctx.strokeStyle = "rgba(245, 158, 11, 0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(46, 46, 1080 - 92, 1350 - 92);
+
+    // Corner Ornaments
+    const drawCorner = (x: number, y: number, rot: number) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(24, 0);
+      ctx.arc(0, 0, 14, 0, Math.PI / 2);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    };
+    drawCorner(56, 56, 0);
+    drawCorner(1080 - 56, 56, Math.PI / 2);
+    drawCorner(1080 - 56, 1350 - 56, Math.PI);
+    drawCorner(56, 1350 - 56, -Math.PI / 2);
+
+    // 3. Header Typography
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f59e0b";
+    ctx.font = "bold 34px Georgia, serif";
+    ctx.fillText("✨  शुभ दीपावली  ✨", 540, 110);
+
+    ctx.fillStyle = "#fef3c7";
+    ctx.font = "600 18px sans-serif";
+    ctx.fillText("FESTIVAL OF LIGHTS • 2026", 540, 145);
+
+    // 4. Draw the WebGL particle portrait centered
+    const destW = 920;
+    const destH = (srcCanvas.height / srcCanvas.width) * destW;
+    const destX = (1080 - destW) / 2;
+    const destY = 180 + (900 - destH) / 2;
+    ctx.drawImage(srcCanvas, destX, destY, destW, destH);
+
+    // 5. Footer Personalized Banner
+    ctx.fillStyle = "#f59e0b";
+    ctx.font = "bold 36px Georgia, serif";
+    ctx.fillText(studentName, 540, 1150);
+
+    ctx.fillStyle = "rgba(254, 243, 199, 0.75)";
+    ctx.font = "16px sans-serif";
+    ctx.fillText("May your path always be illuminated with wisdom, peace & joy.", 540, 1195);
+
+    ctx.fillStyle = "rgba(245, 158, 11, 0.5)";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("DEEPAVALI CELEBRATION PLATFORM", 540, 1260);
+
+    // 6. Trigger Download
+    const link = document.createElement("a");
+    link.download = `Deepavali_Portrait_${studentName.replace(/\s+/g, "_")}.png`;
+    link.href = souvenir.toDataURL("image/png");
+    link.click();
+  };
+
   const currentCaption = photos[currentPhotoIndex]?.caption;
 
   return (
     <div ref={containerRef} className="relative w-full h-[82vh] md:h-[86vh] flex flex-col justify-between overflow-hidden select-none">
-      {/* Three.js Particle Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-0 pointer-events-auto" />
+      {/* Three.js Particle Canvas with Interactive Forcefield */}
+      <canvas
+        ref={canvasRef}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        className="absolute inset-0 w-full h-full z-0 pointer-events-auto cursor-crosshair"
+      />
 
       {/* Top Controls Overlay */}
       <div className="relative z-10 w-full max-w-5xl mx-auto flex items-center justify-between p-4">
@@ -370,13 +485,13 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
           </div>
         )}
 
-        {/* Trigger Button: Fire / Next Memory */}
-        <div className="flex items-center gap-4">
+        {/* Trigger Button: Fire / Next Memory + Souvenir Download */}
+        <div className="flex items-center gap-3 flex-wrap justify-center">
           <DiwaliButton
             size="lg"
             onClick={handleFire}
             isLoading={isProcessing || isLoadingImage}
-            className="min-w-[220px]"
+            className="min-w-[210px]"
           >
             {state === "READY" ? (
               <span className="inline-flex items-center gap-2">
@@ -392,11 +507,22 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
               <span>Reconstructing Light...</span>
             )}
           </DiwaliButton>
+
+          {state === "PORTRAIT_IDLE" && (
+            <button
+              onClick={handleDownloadSouvenir}
+              className="inline-flex items-center gap-2 px-4 py-3 rounded-full bg-black/50 border border-diwali-gold/50 text-xs font-semibold text-diwali-gold hover:bg-diwali-gold/20 hover:scale-105 active:scale-95 transition-all shadow-glow-gold"
+              title="Download High-Res Festive Souvenir"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Save Souvenir</span>
+            </button>
+          )}
         </div>
 
         <p className="text-[11px] text-diwali-muted/70 tracking-wider">
           {state === "PORTRAIT_IDLE"
-            ? "Your memories sculpted purely from light particles. Click to advance to your next portrait."
+            ? "Hover or drag your cursor to interact with the starlight field. Click Save Souvenir to download your festive portrait."
             : "Click launch to ascend a celebratory rocket and sculpt your portrait in starlight."}
         </p>
       </div>
