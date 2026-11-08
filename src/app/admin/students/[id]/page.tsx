@@ -44,6 +44,7 @@ export default function StudentDetailPage({
   const [isSaving, setIsSaving] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const handlePreviewExperience = async () => {
     setIsPreviewing(true);
@@ -65,19 +66,33 @@ export default function StudentDetailPage({
   };
 
   useEffect(() => {
+    let isMounted = true;
     fetch(`/api/admin/students/${studentId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.student) {
+      .then(async (res) => {
+        if (res.status === 401) {
+          window.location.href = "/admin/login";
+          return;
+        }
+        const data = await res.json();
+        if (!isMounted) return;
+        if (res.ok && data.student) {
           setStudent(data.student);
           setDisplayName(data.student.displayName);
           setGreetingMessage(data.student.greetingMessage || "");
           setSecretMessage(data.student.secretMessage || "");
           setIsActive(data.student.isActive);
           setPhotos(data.photos || []);
+        } else {
+          setFetchError(data.message || "Student profile could not be loaded.");
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (isMounted) setFetchError("Network error while connecting to database.");
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [studentId]);
 
   const handleSaveDetails = async (e: React.FormEvent) => {
@@ -141,11 +156,44 @@ export default function StudentDetailPage({
     }
   };
 
+  if (fetchError) {
+    return (
+      <main className="min-h-screen w-full bg-diwali-night text-diwali-ivory p-8 flex items-center justify-center">
+        <GlassCard glow className="p-8 max-w-md text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 text-red-300 flex items-center justify-center mx-auto">
+            <Trash2 className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-diwali-gold">Unable to Load Student</h2>
+          <p className="text-xs text-diwali-muted">{fetchError}</p>
+          <div className="pt-2">
+            <Link
+              href="/admin"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-diwali-gold text-diwali-night font-bold text-xs uppercase tracking-wider shadow-glow-gold hover:scale-105 transition-all"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Return to Creator Console</span>
+            </Link>
+          </div>
+        </GlassCard>
+      </main>
+    );
+  }
+
   if (!student) {
     return (
       <main className="min-h-screen w-full bg-diwali-night text-diwali-ivory p-8 flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center space-y-3">
           <p className="text-sm text-diwali-gold animate-pulse">Loading student profile...</p>
+          <p className="text-[11px] text-diwali-muted">Connecting to secure student records</p>
+          <div className="pt-2">
+            <Link
+              href="/admin"
+              className="inline-flex items-center gap-1.5 text-xs text-diwali-muted hover:text-diwali-gold transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Cancel & return to console</span>
+            </Link>
+          </div>
         </div>
       </main>
     );
