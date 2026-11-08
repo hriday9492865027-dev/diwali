@@ -117,6 +117,12 @@ export default function DiyaActivityPage() {
                       <stop offset="60%" stopColor="#431407" />
                       <stop offset="100%" stopColor="#1e0b04" />
                     </linearGradient>
+                    <linearGradient id="flameGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+                      <stop offset="0%" stopColor="#ea580c" />
+                      <stop offset="40%" stopColor="#f59e0b" />
+                      <stop offset="85%" stopColor="#fef08a" />
+                      <stop offset="100%" stopColor="#ffffff" />
+                    </linearGradient>
                   </defs>
 
                   {/* Flame (Only visible when lit) */}

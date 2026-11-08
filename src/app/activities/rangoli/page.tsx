@@ -1,21 +1,19 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   RotateCcw,
-  Palette,
-  Sparkles,
   Download,
   Trash2,
   Undo2,
+  Redo2,
   CheckCircle2,
   Eye,
   EyeOff,
   Plus,
-  Save,
   X,
 } from "lucide-react";
 import { DiwaliButton } from "@/components/ui/DiwaliButton";
@@ -45,20 +43,26 @@ const SYMMETRIES = [6, 8, 12, 16];
 export default function RangoliActivityPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Drawing tools state
   const [selectedColor, setSelectedColor] = useState("#f5c042");
   const [brushSize, setBrushSize] = useState(3);
   const [symmetryCount, setSymmetryCount] = useState(8);
   const [showGuides, setShowGuides] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [canUndo, setCanUndo] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
 
-  // Undo History stack
+  // Undo & Redo History state
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const undoStackRef = useRef<ImageData[]>([]);
+  const redoStackRef = useRef<ImageData[]>([]);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Unsaved changes confirmation modal
+  // Toast message
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Unsaved changes confirmation dialog
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -71,45 +75,7 @@ export default function RangoliActivityPage() {
     action: "CLEAR",
   });
 
-  // Re-draw background base and center guide
-  const drawBaseCanvas = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Midnight festive background
-    ctx.fillStyle = "#0a0e27";
-    ctx.fillRect(0, 0, width, height);
-
-    // Subtle concentric guideline rings if enabled
-    if (showGuides) {
-      ctx.save();
-      const cx = width / 2;
-      const cy = height / 2;
-      ctx.strokeStyle = "rgba(245, 192, 66, 0.08)";
-      ctx.lineWidth = 1;
-
-      [60, 120, 180, 240, 280].forEach((r) => {
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.stroke();
-      });
-
-      // Radiating faint guide spokes
-      for (let i = 0; i < symmetryCount; i++) {
-        const angle = (i * Math.PI * 2) / symmetryCount;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + Math.cos(angle) * 280, cy + Math.sin(angle) * 280);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // Sacred center bindu/dot
-    ctx.beginPath();
-    ctx.arc(width / 2, height / 2, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(245, 192, 66, 0.6)";
-    ctx.fill();
-  }, [showGuides, symmetryCount]);
-
-  // Initial Canvas Setup
+  // Initial Canvas Setup (ONLY runs once on mount - never resets on petal count change!)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -120,8 +86,10 @@ export default function RangoliActivityPage() {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
-    drawBaseCanvas(ctx, 600, 600);
-  }, [drawBaseCanvas]);
+    // Midnight festive base background
+    ctx.fillStyle = "#0a0e27";
+    ctx.fillRect(0, 0, 600, 600);
+  }, []);
 
   // Browser refresh/close prevention
   useEffect(() => {
@@ -175,7 +143,7 @@ export default function RangoliActivityPage() {
     drawDiamond(44, size - 44);
     drawDiamond(size - 44, size - 44);
 
-    // Draw the rangoli drawing scaled crisp
+    // Draw the actual rangoli drawing centered and scaled crisp
     ctx.drawImage(canvas, 70, 70, size - 140, size - 140);
 
     // Sacred Deepavali typography
@@ -251,15 +219,20 @@ export default function RangoliActivityPage() {
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
     // Snapshot state for undo
-    if (undoStackRef.current.length >= 25) {
+    if (undoStackRef.current.length >= 30) {
       undoStackRef.current.shift();
     }
     undoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
     setCanUndo(true);
+
+    // Any new stroke clears the redo stack
+    redoStackRef.current = [];
+    setCanRedo(false);
+
     setHasUnsavedChanges(true);
 
     const rect = canvas.getBoundingClientRect();
@@ -297,31 +270,73 @@ export default function RangoliActivityPage() {
     lastPointRef.current = null;
   };
 
+  // Undo action
   const handleUndo = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
+    if (undoStackRef.current.length === 0) return;
+
+    // Push current canvas state to redo stack
+    if (redoStackRef.current.length >= 30) {
+      redoStackRef.current.shift();
+    }
+    redoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
+    setCanRedo(true);
+
+    // Pop and apply previous state from undo stack
     const previousState = undoStackRef.current.pop();
     if (previousState) {
       ctx.putImageData(previousState, 0, 0);
-      setCanUndo(undoStackRef.current.length > 0);
-      if (undoStackRef.current.length === 0) {
-        setHasUnsavedChanges(false);
-      }
     }
+
+    setCanUndo(undoStackRef.current.length > 0);
+    if (undoStackRef.current.length === 0) {
+      setHasUnsavedChanges(false);
+    }
+  };
+
+  // Redo action
+  const handleRedo = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    if (redoStackRef.current.length === 0) return;
+
+    // Push current state to undo stack
+    if (undoStackRef.current.length >= 30) {
+      undoStackRef.current.shift();
+    }
+    undoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
+    setCanUndo(true);
+
+    // Pop and apply next state from redo stack
+    const nextState = redoStackRef.current.pop();
+    if (nextState) {
+      ctx.putImageData(nextState, 0, 0);
+    }
+
+    setCanRedo(redoStackRef.current.length > 0);
+    setHasUnsavedChanges(true);
   };
 
   const executeClear = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
-    drawBaseCanvas(ctx, 600, 600);
+    ctx.fillStyle = "#0a0e27";
+    ctx.fillRect(0, 0, 600, 600);
+
     undoStackRef.current = [];
+    redoStackRef.current = [];
     setCanUndo(false);
+    setCanRedo(false);
     setHasUnsavedChanges(false);
   };
 
@@ -572,7 +587,7 @@ export default function RangoliActivityPage() {
 
             <div className="h-4 w-px bg-white/20 hidden sm:block" />
 
-            {/* Symmetry Controls */}
+            {/* Symmetry Controls (Petals) - Never resets existing art! */}
             <div className="flex items-center gap-1 text-[11px] text-diwali-muted font-semibold">
               <span className="mr-1">Petals:</span>
               {SYMMETRIES.map((sym) => (
@@ -581,10 +596,10 @@ export default function RangoliActivityPage() {
                   onClick={() => setSymmetryCount(sym)}
                   className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border transition-colors ${
                     symmetryCount === sym
-                      ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold"
+                      ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold scale-110"
                       : "border-white/10 text-white/60 hover:text-white"
                   }`}
-                  title={`${sym}-fold symmetry`}
+                  title={`Switch to ${sym}-fold symmetry for subsequent strokes`}
                 >
                   {sym}
                 </button>
@@ -593,16 +608,28 @@ export default function RangoliActivityPage() {
 
             <div className="h-4 w-px bg-white/20 hidden sm:block" />
 
-            {/* Undo Action */}
-            <button
-              type="button"
-              onClick={handleUndo}
-              disabled={!canUndo}
-              className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-30 disabled:pointer-events-none transition-colors"
-              title="Undo last stroke"
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-            </button>
+            {/* Undo & Redo Actions */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                title="Undo last stroke"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRedo}
+                disabled={!canRedo}
+                className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                title="Redo stroke"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
             {/* Toggle Guidelines */}
             <button
@@ -620,8 +647,9 @@ export default function RangoliActivityPage() {
           </div>
         </div>
 
-        {/* Drawing Canvas */}
+        {/* Drawing Canvas Container */}
         <div className="relative rounded-2xl overflow-hidden border-2 border-diwali-gold/40 shadow-glow-gold bg-[#0a0e27]">
+          {/* User Drawing Canvas (Never cleared on petal count or guide toggle) */}
           <canvas
             ref={canvasRef}
             onMouseDown={startDrawing}
@@ -633,10 +661,54 @@ export default function RangoliActivityPage() {
             onTouchEnd={stopDrawing}
             className="w-[320px] h-[320px] sm:w-[460px] sm:h-[460px] md:w-[520px] md:h-[520px] cursor-crosshair touch-none"
           />
+
+          {/* Symmetrical Guidelines SVG Overlay (Pointer-events-none, reactive to petal count) */}
+          {showGuides && (
+            <svg
+              viewBox="0 0 600 600"
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            >
+              {/* Concentric Guide Circles */}
+              {[60, 120, 180, 240, 280].map((r) => (
+                <circle
+                  key={r}
+                  cx="300"
+                  cy="300"
+                  r={r}
+                  fill="none"
+                  stroke="rgba(245, 192, 66, 0.12)"
+                  strokeWidth="1"
+                  strokeDasharray="4 4"
+                />
+              ))}
+
+              {/* Radial Spokes based on active symmetryCount */}
+              {Array.from({ length: symmetryCount }).map((_, i) => {
+                const angle = (i * Math.PI * 2) / symmetryCount;
+                const x2 = 300 + Math.cos(angle) * 285;
+                const y2 = 300 + Math.sin(angle) * 285;
+                return (
+                  <line
+                    key={i}
+                    x1="300"
+                    y1="300"
+                    x2={x2}
+                    y2={y2}
+                    stroke="rgba(245, 192, 66, 0.14)"
+                    strokeWidth="1"
+                    strokeDasharray="3 3"
+                  />
+                );
+              })}
+
+              {/* Center Sacred Bindu */}
+              <circle cx="300" cy="300" r="4" fill="rgba(245, 192, 66, 0.5)" />
+            </svg>
+          )}
         </div>
 
         <div className="flex items-center justify-between w-full max-w-[520px] text-[11px] text-diwali-muted/80 tracking-wider mt-2.5 px-1">
-          <span>✨ Draw with mouse or touch. Radiates in {symmetryCount}-fold symmetry.</span>
+          <span>✨ Draw with mouse or touch. Radiating in {symmetryCount}-fold symmetry.</span>
           {hasUnsavedChanges && (
             <span className="text-amber-300 font-medium animate-pulse flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
