@@ -68,13 +68,26 @@ export async function POST(
 
     let blobPathname = `students/${targetStudentId}/${Date.now()}-${file.name}`;
 
-    // Upload to Vercel Blob if token is set
+    // 1. Upload to Vercel Blob if token is set
     if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const blobResult = await put(blobPathname, file, {
-        access: "public",
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
-      blobPathname = blobResult.pathname;
+      try {
+        const blobResult = await put(blobPathname, file, {
+          access: "public",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+        blobPathname = blobResult.url || blobResult.pathname;
+      } catch (blobError) {
+        console.warn("Vercel Blob put failed, falling back to data URI storage:", blobError);
+        const bytes = await file.arrayBuffer();
+        const base64 = Buffer.from(bytes).toString("base64");
+        blobPathname = `data:${file.type};base64,${base64}`;
+      }
+    } else {
+      // 2. Reliable Fallback when Vercel Blob is not yet attached:
+      // Store as Data URI so the image displays immediately in the browser
+      const bytes = await file.arrayBuffer();
+      const base64 = Buffer.from(bytes).toString("base64");
+      blobPathname = `data:${file.type};base64,${base64}`;
     }
 
     if (db) {
@@ -137,7 +150,7 @@ export async function DELETE(
         .limit(1);
 
       if (records.length > 0) {
-        if (process.env.BLOB_READ_WRITE_TOKEN) {
+        if (process.env.BLOB_READ_WRITE_TOKEN && !records[0].blobPathname.startsWith("data:")) {
           try {
             await del(records[0].blobPathname, {
               token: process.env.BLOB_READ_WRITE_TOKEN,
