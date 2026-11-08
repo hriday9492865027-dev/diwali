@@ -1,27 +1,115 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, RotateCcw, Palette, Sparkles, Download } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  RotateCcw,
+  Palette,
+  Sparkles,
+  Download,
+  Trash2,
+  Undo2,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Plus,
+  Save,
+  X,
+} from "lucide-react";
 import { DiwaliButton } from "@/components/ui/DiwaliButton";
+import { GlassCard } from "@/components/ui/GlassCard";
 
 const PALETTE_COLORS = [
-  { name: "Gold", hex: "#f5c042" },
-  { name: "Saffron", hex: "#ea580c" },
-  { name: "Ruby", hex: "#e11d48" },
-  { name: "Emerald", hex: "#10b981" },
-  { name: "Cyan", hex: "#06b6d4" },
-  { name: "White", hex: "#ffffff" },
+  { name: "Surya Gold", hex: "#f5c042" },
+  { name: "Kesar Saffron", hex: "#f97316" },
+  { name: "Kumkum Vermillion", hex: "#e11d48" },
+  { name: "Gulabi Pink", hex: "#ec4899" },
+  { name: "Haldi Yellow", hex: "#eab308" },
+  { name: "Mehendi Green", hex: "#10b981" },
+  { name: "Mayur Cyan", hex: "#06b6d4" },
+  { name: "Amethyst Violet", hex: "#a855f7" },
+  { name: "Sacred White", hex: "#ffffff" },
 ];
 
+const BRUSH_SIZES = [
+  { label: "Fine", size: 2 },
+  { label: "Medium", size: 4 },
+  { label: "Bold", size: 7 },
+  { label: "Glow", size: 12 },
+];
+
+const SYMMETRIES = [6, 8, 12, 16];
+
 export default function RangoliActivityPage() {
+  const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [selectedColor, setSelectedColor] = useState("#f5c042");
   const [brushSize, setBrushSize] = useState(3);
   const [symmetryCount, setSymmetryCount] = useState(8);
+  const [showGuides, setShowGuides] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Undo History stack
+  const undoStackRef = useRef<ImageData[]>([]);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Unsaved changes confirmation modal
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    action: "CLEAR" | "NEW" | "DASHBOARD";
+  }>({
+    isOpen: false,
+    title: "",
+    description: "",
+    action: "CLEAR",
+  });
+
+  // Re-draw background base and center guide
+  const drawBaseCanvas = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    // Midnight festive background
+    ctx.fillStyle = "#0a0e27";
+    ctx.fillRect(0, 0, width, height);
+
+    // Subtle concentric guideline rings if enabled
+    if (showGuides) {
+      ctx.save();
+      const cx = width / 2;
+      const cy = height / 2;
+      ctx.strokeStyle = "rgba(245, 192, 66, 0.08)";
+      ctx.lineWidth = 1;
+
+      [60, 120, 180, 240, 280].forEach((r) => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+
+      // Radiating faint guide spokes
+      for (let i = 0; i < symmetryCount; i++) {
+        const angle = (i * Math.PI * 2) / symmetryCount;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(angle) * 280, cy + Math.sin(angle) * 280);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Sacred center bindu/dot
+    ctx.beginPath();
+    ctx.arc(width / 2, height / 2, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(245, 192, 66, 0.6)";
+    ctx.fill();
+  }, [showGuides, symmetryCount]);
+
+  // Initial Canvas Setup
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -29,18 +117,92 @@ export default function RangoliActivityPage() {
     canvas.width = 600;
     canvas.height = 600;
 
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
-    // Draw initial center guide dot
-    ctx.fillStyle = "#0d1330";
-    ctx.fillRect(0, 0, 600, 600);
+    drawBaseCanvas(ctx, 600, 600);
+  }, [drawBaseCanvas]);
 
-    ctx.beginPath();
-    ctx.arc(300, 300, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(245, 192, 66, 0.4)";
-    ctx.fill();
-  }, []);
+  // Browser refresh/close prevention
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved Rangoli artwork. Do you want to download and save it before leaving?";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // High-Resolution PNG Artwork Downloader
+  const downloadArtwork = (showSuccessToast = true) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const exportCanvas = document.createElement("canvas");
+    const size = 1200;
+    exportCanvas.width = size;
+    exportCanvas.height = size;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return;
+
+    // Rich deep night backdrop
+    ctx.fillStyle = "#070a1e";
+    ctx.fillRect(0, 0, size, size);
+
+    // Decorative outer gold borders
+    ctx.strokeStyle = "rgba(245, 192, 66, 0.45)";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(30, 30, size - 60, size - 60);
+
+    ctx.strokeStyle = "rgba(245, 192, 66, 0.2)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(44, 44, size - 88, size - 88);
+
+    // Corner diamond accents
+    const drawDiamond = (cx: number, cy: number) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.fillStyle = "rgba(245, 192, 66, 0.7)";
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    drawDiamond(44, 44);
+    drawDiamond(size - 44, 44);
+    drawDiamond(44, size - 44);
+    drawDiamond(size - 44, size - 44);
+
+    // Draw the rangoli drawing scaled crisp
+    ctx.drawImage(canvas, 70, 70, size - 140, size - 140);
+
+    // Sacred Deepavali typography
+    ctx.font = "bold 22px 'Cinzel', Georgia, serif";
+    ctx.fillStyle = "rgba(245, 192, 66, 0.95)";
+    ctx.textAlign = "center";
+    ctx.fillText("SHUBH DEEPAVALI — SACRED RANGOLI", size / 2, size - 52);
+
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+    ctx.fillText("Created with Sacred Symmetry & Light", size / 2, size - 28);
+
+    // Trigger download
+    const dataUrl = exportCanvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `deepavali-rangoli-art-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setHasUnsavedChanges(false);
+    if (showSuccessToast) {
+      setToast("Rangoli artwork downloaded and saved to your device!");
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
 
   const drawSymmetrical = (x0: number, y0: number, x1: number, y1: number) => {
     const canvas = canvasRef.current;
@@ -55,7 +217,7 @@ export default function RangoliActivityPage() {
     ctx.lineWidth = brushSize;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.shadowBlur = brushSize * 2.5;
+    ctx.shadowBlur = brushSize * 2.2;
     ctx.shadowColor = selectedColor;
 
     const angleStep = (Math.PI * 2) / symmetryCount;
@@ -89,6 +251,17 @@ export default function RangoliActivityPage() {
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Snapshot state for undo
+    if (undoStackRef.current.length >= 25) {
+      undoStackRef.current.shift();
+    }
+    undoStackRef.current.push(ctx.getImageData(0, 0, 600, 600));
+    setCanUndo(true);
+    setHasUnsavedChanges(true);
+
     const rect = canvas.getBoundingClientRect();
     const scale = 600 / rect.width;
 
@@ -124,59 +297,252 @@ export default function RangoliActivityPage() {
     lastPointRef.current = null;
   };
 
-  const clearCanvas = () => {
+  const handleUndo = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = "#0d1330";
-    ctx.fillRect(0, 0, 600, 600);
-    ctx.beginPath();
-    ctx.arc(300, 300, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(245, 192, 66, 0.4)";
-    ctx.fill();
+
+    const previousState = undoStackRef.current.pop();
+    if (previousState) {
+      ctx.putImageData(previousState, 0, 0);
+      setCanUndo(undoStackRef.current.length > 0);
+      if (undoStackRef.current.length === 0) {
+        setHasUnsavedChanges(false);
+      }
+    }
+  };
+
+  const executeClear = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    drawBaseCanvas(ctx, 600, 600);
+    undoStackRef.current = [];
+    setCanUndo(false);
+    setHasUnsavedChanges(false);
+  };
+
+  // Intercept clearing canvas
+  const requestClear = () => {
+    if (hasUnsavedChanges) {
+      setConfirmDialog({
+        isOpen: true,
+        title: "Save Rangoli Before Clearing?",
+        description:
+          "You have an unsaved sacred Rangoli artwork on canvas. Would you like to download and save it before clearing?",
+        action: "CLEAR",
+      });
+    } else {
+      executeClear();
+    }
+  };
+
+  // Intercept creating new artwork
+  const requestNew = () => {
+    if (hasUnsavedChanges) {
+      setConfirmDialog({
+        isOpen: true,
+        title: "Save Rangoli Before Starting New?",
+        description:
+          "Would you like to download and save your current Rangoli artwork before starting a fresh creation?",
+        action: "NEW",
+      });
+    } else {
+      executeClear();
+      setToast("Fresh Rangoli canvas ready!");
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
+
+  // Intercept dashboard navigation
+  const requestDashboard = () => {
+    if (hasUnsavedChanges) {
+      setConfirmDialog({
+        isOpen: true,
+        title: "Save Rangoli Before Leaving?",
+        description:
+          "You have an unsaved Rangoli artwork in progress. Would you like to download it to your device before returning to the dashboard?",
+        action: "DASHBOARD",
+      });
+    } else {
+      router.push("/dashboard");
+    }
+  };
+
+  // Confirm dialog actions
+  const handleConfirmSaveAndProceed = () => {
+    downloadArtwork(false);
+    const act = confirmDialog.action;
+    setConfirmDialog({ ...confirmDialog, isOpen: false });
+
+    if (act === "CLEAR") {
+      executeClear();
+      setToast("Artwork saved & canvas cleared!");
+    } else if (act === "NEW") {
+      executeClear();
+      setToast("Artwork saved & new canvas ready!");
+    } else if (act === "DASHBOARD") {
+      router.push("/dashboard");
+    }
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleConfirmDiscard = () => {
+    const act = confirmDialog.action;
+    setConfirmDialog({ ...confirmDialog, isOpen: false });
+
+    if (act === "CLEAR" || act === "NEW") {
+      executeClear();
+      setToast(act === "CLEAR" ? "Canvas cleared." : "Fresh canvas ready.");
+    } else if (act === "DASHBOARD") {
+      router.push("/dashboard");
+    }
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleCancelDialog = () => {
+    setConfirmDialog({ ...confirmDialog, isOpen: false });
   };
 
   return (
     <main className="relative min-h-screen w-full bg-gradient-to-b from-diwali-night via-diwali-navy to-diwali-night text-diwali-ivory p-4 md:p-8 flex flex-col justify-between overflow-hidden select-none">
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-diwali-gold/90 text-diwali-night font-bold text-xs tracking-wider shadow-glow-gold flex items-center gap-2 animate-fade-in">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toast}</span>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Save / Discard / Cancel */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <GlassCard glow className="max-w-md w-full p-6 space-y-5 text-center relative border-diwali-gold/40 shadow-glow-gold-lg">
+            <button
+              onClick={handleCancelDialog}
+              className="absolute top-4 right-4 p-1.5 rounded-full text-diwali-muted hover:text-diwali-gold hover:bg-white/10 transition-colors"
+              title="Cancel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="w-14 h-14 rounded-full bg-diwali-gold/15 border border-diwali-gold/40 text-diwali-gold flex items-center justify-center mx-auto shadow-glow-gold">
+              <Download className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-bold text-diwali-gold uppercase tracking-wider">
+                {confirmDialog.title}
+              </h2>
+              <p className="text-xs text-diwali-muted leading-relaxed">
+                {confirmDialog.description}
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
+              <DiwaliButton
+                onClick={handleConfirmSaveAndProceed}
+                size="sm"
+                className="w-full sm:w-auto"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Save & Download Art</span>
+                </span>
+              </DiwaliButton>
+
+              <button
+                type="button"
+                onClick={handleConfirmDiscard}
+                className="w-full sm:w-auto px-4 py-2 rounded-full border border-red-500/40 bg-red-950/40 hover:bg-red-900/60 text-red-200 text-xs font-semibold uppercase tracking-wider transition-colors inline-flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                <span>Discard Art</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCancelDialog}
+                className="w-full sm:w-auto px-4 py-2 rounded-full border border-white/15 hover:bg-white/5 text-diwali-muted hover:text-diwali-ivory text-xs font-semibold uppercase tracking-wider transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
       {/* Top Header */}
-      <header className="relative z-10 max-w-5xl mx-auto w-full flex items-center justify-between pb-6 border-b border-diwali-gold/15">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 border border-diwali-gold/30 text-xs text-diwali-ivory hover:text-diwali-gold transition-colors"
+      <header className="relative z-10 max-w-5xl mx-auto w-full flex items-center justify-between pb-4 border-b border-diwali-gold/15 gap-2">
+        <button
+          type="button"
+          onClick={requestDashboard}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 border border-diwali-gold/30 text-xs text-diwali-ivory hover:text-diwali-gold hover:border-diwali-gold transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Dashboard</span>
-        </Link>
+        </button>
 
         <div className="text-center">
-          <h1 className="text-lg md:text-xl font-bold tracking-[0.18em] text-gold-gradient uppercase">
-            Rangoli Creator
+          <h1 className="text-base md:text-xl font-bold tracking-[0.18em] text-gold-gradient uppercase">
+            Sacred Rangoli Creator
           </h1>
-          <p className="text-[11px] text-diwali-muted">Sacred Symmetrical Sand Art</p>
+          <p className="text-[10px] md:text-[11px] text-diwali-muted">
+            Sacred Symmetrical Sand Art & Auspicious Mandala
+          </p>
         </div>
 
-        <button
-          onClick={clearCanvas}
-          className="p-2 rounded-full bg-black/40 border border-diwali-gold/30 text-diwali-muted hover:text-diwali-gold transition-colors"
-          title="Clear canvas"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Direct Download / Save Button */}
+          <button
+            type="button"
+            onClick={() => downloadArtwork(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-diwali-gold text-diwali-night font-bold text-xs uppercase tracking-wider shadow-glow-gold hover:scale-105 active:scale-95 transition-all"
+            title="Download Rangoli as high-resolution PNG image"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Save Art</span>
+          </button>
+
+          {/* New Canvas Button */}
+          <button
+            type="button"
+            onClick={requestNew}
+            className="p-2 rounded-full bg-black/40 border border-diwali-gold/30 text-diwali-gold hover:bg-diwali-gold/20 transition-colors"
+            title="Create New Rangoli Art"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+
+          {/* Clear Button */}
+          <button
+            type="button"
+            onClick={requestClear}
+            className="p-2 rounded-full bg-black/40 border border-diwali-gold/30 text-diwali-muted hover:text-red-400 hover:border-red-400/50 transition-colors"
+            title="Clear canvas"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
       {/* Main Canvas & Toolbox */}
-      <div className="relative z-10 max-w-3xl mx-auto w-full flex flex-col items-center my-auto py-4">
-        {/* Color Palette & Brush Controls */}
-        <div className="flex flex-wrap items-center justify-center gap-4 mb-4 p-3 rounded-2xl bg-black/50 border border-diwali-gold/30 backdrop-blur-md">
-          {/* Colors */}
-          <div className="flex items-center gap-2">
+      <div className="relative z-10 max-w-4xl mx-auto w-full flex flex-col items-center my-auto py-2">
+        {/* Controls Toolbar */}
+        <div className="w-full flex flex-wrap items-center justify-between gap-3 mb-3 p-3 rounded-2xl bg-black/50 border border-diwali-gold/30 backdrop-blur-md">
+          {/* Color Palette */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             {PALETTE_COLORS.map((c) => (
               <button
                 key={c.name}
                 onClick={() => setSelectedColor(c.hex)}
                 className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                  selectedColor === c.hex ? "scale-125 border-white shadow-glow-gold" : "border-transparent opacity-80"
+                  selectedColor === c.hex
+                    ? "scale-125 border-white shadow-glow-gold z-10"
+                    : "border-transparent opacity-80 hover:opacity-100"
                 }`}
                 style={{ backgroundColor: c.hex }}
                 title={c.name}
@@ -184,27 +550,78 @@ export default function RangoliActivityPage() {
             ))}
           </div>
 
-          <div className="h-5 w-px bg-white/20 mx-1" />
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Brush Sizes */}
+            <div className="flex items-center gap-1 text-[11px] text-diwali-muted font-semibold">
+              <span className="mr-1">Brush:</span>
+              {BRUSH_SIZES.map((b) => (
+                <button
+                  key={b.size}
+                  onClick={() => setBrushSize(b.size)}
+                  className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${
+                    brushSize === b.size
+                      ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold"
+                      : "border-white/10 text-white/60 hover:text-white"
+                  }`}
+                  title={`${b.label} (${b.size}px)`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
 
-          {/* Brush Sizes */}
-          <div className="flex items-center gap-2 text-xs text-diwali-muted font-semibold">
-            <span>Size:</span>
-            {[2, 4, 7].map((s) => (
-              <button
-                key={s}
-                onClick={() => setBrushSize(s)}
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border ${
-                  brushSize === s ? "border-diwali-gold text-diwali-gold bg-diwali-gold/15" : "border-white/10 text-white/60"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
+            <div className="h-4 w-px bg-white/20 hidden sm:block" />
+
+            {/* Symmetry Controls */}
+            <div className="flex items-center gap-1 text-[11px] text-diwali-muted font-semibold">
+              <span className="mr-1">Petals:</span>
+              {SYMMETRIES.map((sym) => (
+                <button
+                  key={sym}
+                  onClick={() => setSymmetryCount(sym)}
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border transition-colors ${
+                    symmetryCount === sym
+                      ? "border-diwali-gold text-diwali-gold bg-diwali-gold/20 font-bold"
+                      : "border-white/10 text-white/60 hover:text-white"
+                  }`}
+                  title={`${sym}-fold symmetry`}
+                >
+                  {sym}
+                </button>
+              ))}
+            </div>
+
+            <div className="h-4 w-px bg-white/20 hidden sm:block" />
+
+            {/* Undo Action */}
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              className="p-1.5 rounded-lg border border-white/15 text-xs text-diwali-muted hover:text-diwali-gold hover:border-diwali-gold disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Undo last stroke"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Toggle Guidelines */}
+            <button
+              type="button"
+              onClick={() => setShowGuides(!showGuides)}
+              className={`p-1.5 rounded-lg border text-xs transition-colors ${
+                showGuides
+                  ? "border-diwali-gold/40 text-diwali-gold bg-diwali-gold/10"
+                  : "border-white/15 text-diwali-muted hover:text-white"
+              }`}
+              title={showGuides ? "Hide symmetry guidelines" : "Show symmetry guidelines"}
+            >
+              {showGuides ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
 
         {/* Drawing Canvas */}
-        <div className="relative rounded-2xl overflow-hidden border-2 border-diwali-gold/40 shadow-glow-gold">
+        <div className="relative rounded-2xl overflow-hidden border-2 border-diwali-gold/40 shadow-glow-gold bg-[#0a0e27]">
           <canvas
             ref={canvasRef}
             onMouseDown={startDrawing}
@@ -218,16 +635,21 @@ export default function RangoliActivityPage() {
           />
         </div>
 
-        <p className="text-[11px] text-diwali-muted/70 tracking-wider mt-3">
-          Draw with mouse or touch. Every stroke mirrors seamlessly in 8-fold sacred symmetry.
-        </p>
+        <div className="flex items-center justify-between w-full max-w-[520px] text-[11px] text-diwali-muted/80 tracking-wider mt-2.5 px-1">
+          <span>✨ Draw with mouse or touch. Radiates in {symmetryCount}-fold symmetry.</span>
+          {hasUnsavedChanges && (
+            <span className="text-amber-300 font-medium animate-pulse flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span>Unsaved Art</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Footer */}
-      <footer className="relative z-10 max-w-5xl mx-auto w-full text-center py-4 border-t border-diwali-gold/10 text-xs text-diwali-muted/60">
-        May your creativity bring sacred auspiciousness to your home.
+      <footer className="relative z-10 max-w-5xl mx-auto w-full text-center py-3 border-t border-diwali-gold/10 text-xs text-diwali-muted/60">
+        May your creativity bring sacred auspiciousness and prosperity to your festive celebration.
       </footer>
     </main>
   );
 }
-
