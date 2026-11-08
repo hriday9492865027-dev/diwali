@@ -66,6 +66,24 @@ export function ParticlePortraitEngine({
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const pointsMeshRef = useRef<THREE.Points | null>(null);
   const rocketMeshRef = useRef<THREE.Group | null>(null);
+  const trailGeomRef = useRef<THREE.BufferGeometry | null>(null);
+  const trailMeshRef = useRef<THREE.Points | null>(null);
+  const trailSparksRef = useRef<
+    {
+      x: number;
+      y: number;
+      z: number;
+      vx: number;
+      vy: number;
+      vz: number;
+      life: number;
+      maxLife: number;
+      size: number;
+      r: number;
+      g: number;
+      b: number;
+    }[]
+  >([]);
   const animFrameIdRef = useRef<number | null>(null);
 
   // State animation timing tracking
@@ -86,36 +104,80 @@ export function ParticlePortraitEngine({
       if (ctx.state === "suspended") ctx.resume();
 
       if (type === "rocket") {
+        // 1. Whistling rocket ascent
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(150, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 1.2);
-        gain.gain.setValueAtTime(0.06, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+        osc.frequency.setValueAtTime(160, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 1.15);
+        gain.gain.setValueAtTime(0.07, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.15);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start();
-        osc.stop(ctx.currentTime + 1.2);
+        osc.stop(ctx.currentTime + 1.15);
+
+        // 2. Fiery rocket roar / sizzle exhaust
+        const bufSize = Math.floor(ctx.sampleRate * 1.15);
+        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+          d[i] = (Math.random() * 2 - 1) * (0.6 + 0.4 * Math.sin(i / 80));
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buf;
+        const filter = ctx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(950, ctx.currentTime);
+        filter.Q.setValueAtTime(2.5, ctx.currentTime);
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.045, ctx.currentTime);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.15);
+        noise.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
+        noise.start();
       } else if (type === "explosion") {
-        const bufferSize = ctx.sampleRate * 0.9;
+        // Deep bass detonation thud
+        const bufferSize = Math.floor(ctx.sampleRate * 1.2);
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) {
-          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.2));
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.22));
         }
         const noise = ctx.createBufferSource();
         noise.buffer = buffer;
         const filter = ctx.createBiquadFilter();
         filter.type = "lowpass";
-        filter.frequency.setValueAtTime(380, ctx.currentTime);
+        filter.frequency.setValueAtTime(420, ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.8);
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.35, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.9);
+        gain.gain.setValueAtTime(0.42, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.1);
         noise.connect(filter);
         filter.connect(gain);
         gain.connect(ctx.destination);
         noise.start();
+
+        // High sparkle crackle burst
+        const crackleSize = Math.floor(ctx.sampleRate * 0.6);
+        const crackleBuf = ctx.createBuffer(1, crackleSize, ctx.sampleRate);
+        const cData = crackleBuf.getChannelData(0);
+        for (let i = 0; i < crackleSize; i++) {
+          cData[i] = Math.random() > 0.88 ? (Math.random() * 2 - 1) : 0;
+        }
+        const cSource = ctx.createBufferSource();
+        cSource.buffer = crackleBuf;
+        const cFilter = ctx.createBiquadFilter();
+        cFilter.type = "highpass";
+        cFilter.frequency.setValueAtTime(2400, ctx.currentTime);
+        const cGain = ctx.createGain();
+        cGain.gain.setValueAtTime(0.18, ctx.currentTime + 0.05);
+        cGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        cSource.connect(cFilter);
+        cFilter.connect(cGain);
+        cGain.connect(ctx.destination);
+        cSource.start(ctx.currentTime + 0.04);
       }
     } catch {
       // Best-effort audio
@@ -196,6 +258,8 @@ export function ParticlePortraitEngine({
       blending: THREE.AdditiveBlending,
       uniforms: {
         uTime: { value: 0 },
+        uBlastProgress: { value: 0.0 },
+        uFallProgress: { value: 0.0 },
         uExplosionProgress: { value: 0.0 },
         uMorphProgress: { value: 0.0 },
         uDissolveProgress: { value: 0.0 },
@@ -216,33 +280,97 @@ export function ParticlePortraitEngine({
     pointsMeshRef.current = points;
     scene.add(points);
 
-    // 5. Rocket Mesh Group (ascending visual)
+    // 5. Rocket Mesh Group (ascending fiery comet matching reference video)
     const rocketGroup = new THREE.Group();
     rocketGroup.visible = false;
 
-    // Glowing Rocket Head Spark
-    const headGeom = new THREE.SphereGeometry(0.06, 12, 12);
-    const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const headMesh = new THREE.Mesh(headGeom, headMat);
-    headMesh.position.y = 0.16;
-    rocketGroup.add(headMesh);
+    // Glowing White-Hot Core Spark
+    const coreGeom = new THREE.SphereGeometry(0.045, 12, 12);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const coreMesh = new THREE.Mesh(coreGeom, coreMat);
+    coreMesh.position.y = 0.05;
+    rocketGroup.add(coreMesh);
 
-    // Rocket Body Cone
-    const coneGeom = new THREE.ConeGeometry(0.09, 0.32, 12);
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
-    const coneMesh = new THREE.Mesh(coneGeom, coneMat);
-    coneMesh.rotation.x = Math.PI;
-    rocketGroup.add(coneMesh);
+    // Radiant Golden Corona Flare
+    const coronaGeom = new THREE.SphereGeometry(0.12, 12, 12);
+    const coronaMat = new THREE.MeshBasicMaterial({
+      color: 0xffc107,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+    });
+    const coronaMesh = new THREE.Mesh(coronaGeom, coronaMat);
+    coronaMesh.position.y = 0.05;
+    rocketGroup.add(coronaMesh);
 
-    // Rocket Flame Tail
-    const tailGeom = new THREE.CylinderGeometry(0.02, 0.09, 0.45, 8);
-    const tailMat = new THREE.MeshBasicMaterial({ color: 0xea580c });
-    const tailMesh = new THREE.Mesh(tailGeom, tailMat);
-    tailMesh.position.y = -0.32;
-    rocketGroup.add(tailMesh);
+    // Fiery Jet Flame Streamer
+    const flameGeom = new THREE.CylinderGeometry(0.012, 0.035, 0.32, 8);
+    const flameMat = new THREE.MeshBasicMaterial({
+      color: 0xf97316,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+    });
+    const flameMesh = new THREE.Mesh(flameGeom, flameMat);
+    flameMesh.position.y = -0.16;
+    rocketGroup.add(flameMesh);
 
     rocketMeshRef.current = rocketGroup;
     scene.add(rocketGroup);
+
+    // 6. Dynamic Cascading Spark Trail for Firecracker Rocket
+    const MAX_TRAIL_SPARKS = 100;
+    const trailPositions = new Float32Array(MAX_TRAIL_SPARKS * 3);
+    const trailColors = new Float32Array(MAX_TRAIL_SPARKS * 3);
+    const trailSizes = new Float32Array(MAX_TRAIL_SPARKS);
+    const trailAlphas = new Float32Array(MAX_TRAIL_SPARKS);
+
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute("position", new THREE.BufferAttribute(trailPositions, 3));
+    trailGeometry.setAttribute("color", new THREE.BufferAttribute(trailColors, 3));
+    trailGeometry.setAttribute("size", new THREE.BufferAttribute(trailSizes, 1));
+    trailGeometry.setAttribute("alpha", new THREE.BufferAttribute(trailAlphas, 1));
+    trailGeomRef.current = trailGeometry;
+
+    const trailMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uPixelRatio: { value: renderer.getPixelRatio() },
+      },
+      vertexShader: `
+        uniform float uPixelRatio;
+        attribute float size;
+        attribute float alpha;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          vColor = color;
+          vAlpha = alpha;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          gl_PointSize = clamp(size * (22.0 / -mvPosition.z) * uPixelRatio, 1.5, 30.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          float dist = length(gl_PointCoord - vec2(0.5));
+          if (dist > 0.5) discard;
+          float core = smoothstep(0.18, 0.0, dist);
+          float glow = smoothstep(0.5, 0.0, dist);
+          gl_FragColor = vec4(vColor, vAlpha * (core * 0.7 + glow * 0.5));
+        }
+      `,
+    });
+
+    const trailMesh = new THREE.Points(trailGeometry, trailMaterial);
+    trailMesh.visible = false;
+    trailMeshRef.current = trailMesh;
+    scene.add(trailMesh);
 
     // Load initial image
     const startIdx = initialIndex >= 0 && initialIndex < photos.length ? initialIndex : 0;
@@ -250,11 +378,12 @@ export function ParticlePortraitEngine({
       loadPhotoToGeometry(photos[startIdx].url);
     }
 
-    // 6. Animation Loop
+    // 7. Animation Loop
     let clock = new THREE.Clock();
 
     const animate = () => {
       const elapsedTime = clock.getElapsedTime();
+      const delta = Math.min(clock.getDelta(), 0.05);
 
       if (materialRef.current) {
         materialRef.current.uniforms.uTime.value = elapsedTime;
@@ -264,6 +393,76 @@ export function ParticlePortraitEngine({
       const currentState = stateRef.current;
       const now = performance.now();
       const elapsedInState = (now - stateStartTimeRef.current) / 1000;
+
+      // Trailing spark emission during ROCKET_LAUNCH
+      if (currentState === "ROCKET_LAUNCH" && rocketMeshRef.current) {
+        const rPos = rocketMeshRef.current.position;
+        // Spawn 3-4 golden trailing sparks per frame at rocket nozzle
+        for (let s = 0; s < 3; s++) {
+          if (trailSparksRef.current.length < MAX_TRAIL_SPARKS) {
+            const isWhiteHot = Math.random() < 0.28;
+            trailSparksRef.current.push({
+              x: rPos.x + (Math.random() - 0.5) * 0.04,
+              y: rPos.y - 0.12 - Math.random() * 0.08,
+              z: rPos.z + (Math.random() - 0.5) * 0.04,
+              vx: (Math.random() - 0.5) * 0.35,
+              vy: -1.8 - Math.random() * 2.8,
+              vz: (Math.random() - 0.5) * 0.35,
+              life: 0,
+              maxLife: 0.35 + Math.random() * 0.45,
+              size: Math.random() * 1.8 + 1.2,
+              r: 1.0,
+              g: isWhiteHot ? 0.96 : 0.65 + Math.random() * 0.25,
+              b: isWhiteHot ? 0.85 : 0.1,
+            });
+          }
+        }
+      }
+
+      // Update active trailing sparks
+      let activeTrailCount = 0;
+      const sparks = trailSparksRef.current;
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const spk = sparks[i];
+        spk.life += delta;
+        if (spk.life >= spk.maxLife) {
+          sparks.splice(i, 1);
+          continue;
+        }
+        spk.x += spk.vx * delta;
+        spk.y += spk.vy * delta;
+        spk.z += spk.vz * delta;
+        spk.vy -= 4.5 * delta; // Downward gravity acceleration
+        spk.vx += (Math.random() - 0.5) * 0.25 * delta; // Air flutter
+
+        const lifeNorm = spk.life / spk.maxLife;
+        const alpha = (1.0 - lifeNorm) * 0.95;
+
+        trailPositions[activeTrailCount * 3] = spk.x;
+        trailPositions[activeTrailCount * 3 + 1] = spk.y;
+        trailPositions[activeTrailCount * 3 + 2] = spk.z;
+
+        trailColors[activeTrailCount * 3] = spk.r;
+        trailColors[activeTrailCount * 3 + 1] = spk.g;
+        trailColors[activeTrailCount * 3 + 2] = spk.b;
+
+        trailSizes[activeTrailCount] = spk.size * (1.0 - lifeNorm * 0.4);
+        trailAlphas[activeTrailCount] = alpha;
+
+        activeTrailCount++;
+      }
+
+      if (trailGeomRef.current) {
+        trailGeomRef.current.setDrawRange(0, activeTrailCount);
+        trailGeomRef.current.attributes.position.needsUpdate = true;
+        trailGeomRef.current.attributes.color.needsUpdate = true;
+        trailGeomRef.current.attributes.size.needsUpdate = true;
+        trailGeomRef.current.attributes.alpha.needsUpdate = true;
+      }
+
+      if (trailMeshRef.current) {
+        trailMeshRef.current.visible = activeTrailCount > 0;
+      }
 
       if (currentState === "READY") {
         if (pointsMeshRef.current) {
@@ -279,67 +478,114 @@ export function ParticlePortraitEngine({
         }
         if (rocketMeshRef.current) {
           rocketMeshRef.current.visible = true;
-          // Ascend from bottom (-3.5) to center (0.5) over 1.2s
-          const progress = Math.min(elapsedInState / 1.2, 1.0);
-          const easeY = -3.5 + Math.sin(progress * Math.PI * 0.5) * 4.0;
+          // Ascend from bottom (-3.8) to apex center (0.5) over 1.15s with ballistic deceleration
+          const launchDur = 1.15;
+          const progress = Math.min(elapsedInState / launchDur, 1.0);
+          const easeY = -3.8 + 4.3 * (1.0 - Math.pow(1.0 - progress, 1.8));
           rocketMeshRef.current.position.y = easeY;
-          rocketMeshRef.current.position.x = Math.sin(progress * 4.0) * 0.08;
+          rocketMeshRef.current.position.x = Math.sin(progress * 4.0) * 0.03;
 
-          // Rocket flame tail flicker
-          const flameMesh = rocketMeshRef.current.children[2];
+          // Rocket flame flicker
           if (flameMesh) {
             flameMesh.scale.y = 0.8 + Math.random() * 0.5;
           }
 
           if (progress >= 1.0) {
-            // Rocket reached apex -> Detonate!
+            // Rocket reached apex -> Detonate directly into Rangoli geometry!
             rocketMeshRef.current.visible = false;
             if (pointsMeshRef.current) {
               pointsMeshRef.current.visible = true;
             }
             playSound("explosion");
-            setState("EXPLOSION");
+            setState("BLAST_EXPANSION");
             stateStartTimeRef.current = performance.now();
           }
         }
-      } else if (currentState === "EXPLOSION") {
-        // Point mesh visible, expanding outward from apex
+      } else if (currentState === "BLAST_EXPANSION") {
         if (pointsMeshRef.current) {
           pointsMeshRef.current.visible = true;
         }
-        const burstDur = 0.45;
-        const burstProgress = Math.min(elapsedInState / burstDur, 1.0);
+        const blastDur = 0.85;
+        const blastProgress = Math.min(elapsedInState / blastDur, 1.0);
         if (materialRef.current) {
-          materialRef.current.uniforms.uExplosionProgress.value = burstProgress;
-          materialRef.current.uniforms.uMorphProgress.value = 0.0;
+          materialRef.current.uniforms.uBlastProgress.value = blastProgress;
+          materialRef.current.uniforms.uExplosionProgress.value = blastProgress;
+          materialRef.current.uniforms.uMorphProgress.value = blastProgress;
+          materialRef.current.uniforms.uFallProgress.value = 0.0;
           materialRef.current.uniforms.uDissolveProgress.value = 0.0;
         }
 
-        if (elapsedInState >= burstDur) {
-          setState("IMAGE_RECONSTRUCTION");
+        if (elapsedInState >= blastDur) {
+          if (mode === "rangoli") {
+            setState("BURST_HOLD");
+          } else {
+            setState("PORTRAIT_IDLE");
+            setIsProcessing(false);
+          }
           stateStartTimeRef.current = performance.now();
         }
-      } else if (currentState === "IMAGE_RECONSTRUCTION") {
+      } else if (currentState === "BURST_HOLD") {
         if (pointsMeshRef.current) {
           pointsMeshRef.current.visible = true;
         }
-        // Morph progress travels 0.0 -> 1.0 over 2.2 seconds
-        const morphDur = 2.2;
-        const progress = Math.min(elapsedInState / morphDur, 1.0);
+        // Sparks stay crystallized in Rangoli geometry for 2 to 3 seconds
+        const holdDur = 2.8;
         if (materialRef.current) {
+          materialRef.current.uniforms.uBlastProgress.value = 1.0;
           materialRef.current.uniforms.uExplosionProgress.value = 1.0;
-          materialRef.current.uniforms.uMorphProgress.value = progress;
+          materialRef.current.uniforms.uMorphProgress.value = 1.0;
+          materialRef.current.uniforms.uFallProgress.value = 0.0;
           materialRef.current.uniforms.uDissolveProgress.value = 0.0;
         }
 
-        if (progress >= 1.0) {
-          setState("PORTRAIT_IDLE");
+        if (elapsedInState >= holdDur) {
+          setState("GRAVITY_FALL");
           stateStartTimeRef.current = performance.now();
+        }
+      } else if (currentState === "GRAVITY_FALL") {
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = true;
+        }
+        // Embers cascade downward under gravity and dissolve into the night sky
+        const fallDur = 2.2;
+        const fallProgress = Math.min(elapsedInState / fallDur, 1.0);
+        if (materialRef.current) {
+          materialRef.current.uniforms.uBlastProgress.value = 1.0;
+          materialRef.current.uniforms.uExplosionProgress.value = 1.0;
+          materialRef.current.uniforms.uMorphProgress.value = 1.0;
+          materialRef.current.uniforms.uFallProgress.value = fallProgress;
+          materialRef.current.uniforms.uDissolveProgress.value = 0.0;
+        }
+
+        if (elapsedInState >= fallDur) {
+          setState("IDLE_COMPLETE");
+          if (pointsMeshRef.current) {
+            pointsMeshRef.current.visible = false;
+          }
           setIsProcessing(false);
+          stateStartTimeRef.current = performance.now();
+        }
+      } else if (currentState === "IDLE_COMPLETE") {
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = false;
+        }
+        if (rocketMeshRef.current) {
+          rocketMeshRef.current.visible = false;
+        }
+      } else if (currentState === "PORTRAIT_IDLE") {
+        if (pointsMeshRef.current) {
+          pointsMeshRef.current.visible = true;
+        }
+        if (materialRef.current) {
+          materialRef.current.uniforms.uBlastProgress.value = 1.0;
+          materialRef.current.uniforms.uExplosionProgress.value = 1.0;
+          materialRef.current.uniforms.uMorphProgress.value = 1.0;
+          materialRef.current.uniforms.uFallProgress.value = 0.0;
+          materialRef.current.uniforms.uDissolveProgress.value = 0.0;
         }
       } else if (currentState === "PARTICLE_DISSOLVE") {
-        // Dissolve outward smoothly over 0.75s
-        const dissolveDur = 0.75;
+        // Dissolve outward smoothly over 0.65s
+        const dissolveDur = 0.65;
         const progress = Math.min(elapsedInState / dissolveDur, 1.0);
         if (materialRef.current) {
           materialRef.current.uniforms.uDissolveProgress.value = progress;
@@ -389,6 +635,14 @@ export function ParticlePortraitEngine({
       renderer.dispose();
       geometry.dispose();
       material.dispose();
+      coreGeom.dispose();
+      coreMat.dispose();
+      coronaGeom.dispose();
+      coronaMat.dispose();
+      flameGeom.dispose();
+      flameMat.dispose();
+      trailGeometry.dispose();
+      trailMaterial.dispose();
     };
   }, [photos, loadPhotoToGeometry]);
 
@@ -397,16 +651,28 @@ export function ParticlePortraitEngine({
     setState("ROCKET_LAUNCH");
     stateStartTimeRef.current = performance.now();
     playSound("rocket");
+
+    // Clear and reset trailing sparks
+    trailSparksRef.current = [];
+    if (trailGeomRef.current) {
+      trailGeomRef.current.setDrawRange(0, 0);
+    }
+    if (trailMeshRef.current) {
+      trailMeshRef.current.visible = false;
+    }
+
     if (pointsMeshRef.current) {
       pointsMeshRef.current.visible = false;
     }
     if (rocketMeshRef.current) {
       rocketMeshRef.current.visible = true;
-      rocketMeshRef.current.position.set(0, -3.5, 0);
+      rocketMeshRef.current.position.set(0, -3.8, 0);
     }
     if (materialRef.current) {
+      materialRef.current.uniforms.uBlastProgress.value = 0.0;
       materialRef.current.uniforms.uExplosionProgress.value = 0.0;
       materialRef.current.uniforms.uMorphProgress.value = 0.0;
+      materialRef.current.uniforms.uFallProgress.value = 0.0;
       materialRef.current.uniforms.uDissolveProgress.value = 0.0;
     }
   };
@@ -439,7 +705,8 @@ export function ParticlePortraitEngine({
 
   // Select a specific saved Rangoli or photo and detonate immediately
   const selectPhoto = (targetIdx: number) => {
-    if (isProcessing || isLoadingImage || targetIdx < 0 || targetIdx >= photos.length) return;
+    if (isLoadingImage || targetIdx < 0 || targetIdx >= photos.length) return;
+    if (stateRef.current === "ROCKET_LAUNCH") return;
 
     setIsProcessing(true);
     setCurrentPhotoIndex(targetIdx);
@@ -639,12 +906,12 @@ export function ParticlePortraitEngine({
                 <button
                   type="button"
                   onClick={() => selectPhoto(currentPhotoIndex)}
-                  disabled={isProcessing}
+                  disabled={isLoadingImage || state === "ROCKET_LAUNCH"}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-diwali-gold text-diwali-night hover:scale-105 active:scale-95 transition-all shadow-glow-gold disabled:opacity-50"
                   title="Re-launch cracker rocket into active Rangoli"
                 >
-                  <RotateCw className="w-3.5 h-3.5" />
-                  <span>Replay Blast</span>
+                  <RotateCw className={`w-3.5 h-3.5 ${state === "ROCKET_LAUNCH" ? "animate-spin" : ""}`} />
+                  <span>{state === "ROCKET_LAUNCH" ? "Ascending..." : "Replay Blast"}</span>
                 </button>
 
                 <button
@@ -681,7 +948,17 @@ export function ParticlePortraitEngine({
                       {item.caption || `Rangoli #${idx + 1}`}
                     </p>
                     <p className="text-[9px] text-diwali-gold font-mono uppercase">
-                      {currentPhotoIndex === idx ? "✨ Active Burst" : "Tap to Fire"}
+                      {currentPhotoIndex === idx
+                        ? state === "ROCKET_LAUNCH"
+                          ? "🚀 Ascending..."
+                          : state === "BLAST_EXPANSION"
+                          ? "💥 Detonating..."
+                          : state === "BURST_HOLD"
+                          ? "✨ Glowing Sacred Art"
+                          : state === "GRAVITY_FALL"
+                          ? "🌌 Falling Sparks"
+                          : "✨ Active Burst"
+                        : "Tap to Fire"}
                     </p>
                   </div>
                   {onDeletePhoto && photos.length > 1 && (
