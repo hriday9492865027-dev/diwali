@@ -403,3 +403,4 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
     </div>
   );
 }
+

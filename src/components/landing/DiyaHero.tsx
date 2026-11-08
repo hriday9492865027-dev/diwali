@@ -105,3 +105,4 @@ export function DiyaHero({ className, size = 280 }: DiyaHeroProps) {
     </div>
   );
 }
+

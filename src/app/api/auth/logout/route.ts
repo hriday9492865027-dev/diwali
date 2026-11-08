@@ -5,3 +5,4 @@ export async function POST() {
   await destroySession();
   return NextResponse.json({ success: true });
 }
+

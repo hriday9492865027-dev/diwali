@@ -70,3 +70,4 @@ export const adminAuditLog = pgTable("admin_audit_log", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+

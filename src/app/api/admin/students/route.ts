@@ -108,3 +108,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Failed to create student account." }, { status: 500 });
   }
 }
+

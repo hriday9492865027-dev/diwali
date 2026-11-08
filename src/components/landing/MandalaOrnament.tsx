@@ -101,3 +101,4 @@ export function MandalaOrnament({ className, size = 600 }: MandalaOrnamentProps)
     </div>
   );
 }
+

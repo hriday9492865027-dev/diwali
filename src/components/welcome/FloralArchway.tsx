@@ -132,3 +132,4 @@ export function FloralArchway({ className, children }: FloralArchwayProps) {
     </div>
   );
 }
+

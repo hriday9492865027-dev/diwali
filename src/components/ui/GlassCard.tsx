@@ -24,3 +24,4 @@ export function GlassCard({ className, glow = false, children, ...props }: Glass
     </div>
   );
 }
+

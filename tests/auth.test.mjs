@@ -45,3 +45,4 @@ test("Student credentials normalization", () => {
   const invalidDob = "15-08-2003";
   assert.equal(dobRegex.test(invalidDob), false);
 });
+

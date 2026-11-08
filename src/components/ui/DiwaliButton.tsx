@@ -53,3 +53,4 @@ export const DiwaliButton = React.forwardRef<HTMLButtonElement, DiwaliButtonProp
 );
 
 DiwaliButton.displayName = "DiwaliButton";
+

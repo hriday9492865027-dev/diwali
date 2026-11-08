@@ -200,3 +200,4 @@ export function WelcomeCinematic({ displayName }: WelcomeCinematicProps) {
     </FloralArchway>
   );
 }
+

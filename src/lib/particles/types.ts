@@ -21,3 +21,4 @@ export interface PhotoAsset {
   url: string;
   caption?: string | null;
 }
+

@@ -196,3 +196,4 @@ export function LoginForm({ mode = "student" }: LoginFormProps) {
     </div>
   );
 }
+

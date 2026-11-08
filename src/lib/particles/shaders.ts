@@ -77,3 +77,4 @@ export const portraitFragmentShader = `
     gl_FragColor = vec4(finalColor, vAlpha * intensity);
   }
 `;
+

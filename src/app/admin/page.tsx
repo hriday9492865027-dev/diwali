@@ -18,7 +18,14 @@ export default async function AdminDashboardPage() {
   let totalStudents = 1;
   let activeStudents = 1;
   let totalPhotos = 3;
-  let studentList = [
+  let studentList: Array<{
+    id: string;
+    rollNumber: string;
+    displayName: string;
+    greetingMessage?: string | null;
+    isActive: boolean;
+    createdAt: Date;
+  }> = [
     {
       id: "11111111-1111-1111-1111-111111111111",
       rollNumber: "21BCE1001",
@@ -199,3 +206,4 @@ export default async function AdminDashboardPage() {
     </main>
   );
 }
+

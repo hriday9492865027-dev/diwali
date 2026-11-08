@@ -4,12 +4,9 @@ import * as schema from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl && process.env.NODE_ENV === "production") {
-  throw new Error("DATABASE_URL environment variable is missing in production.");
-}
-
 // In serverless environments, neon-http client provides HTTP-based pooled queries
 export const sql = databaseUrl ? neon(databaseUrl) : null;
 export const db = sql ? drizzle(sql, { schema }) : null;
 
 export { schema };
+

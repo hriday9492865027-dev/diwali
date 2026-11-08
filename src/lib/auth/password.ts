@@ -26,3 +26,4 @@ export async function verifyPassword(plain: string, hashed: string): Promise<boo
     return false;
   }
 }
+
