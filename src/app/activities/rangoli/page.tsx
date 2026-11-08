@@ -16,6 +16,8 @@ import {
   Plus,
   X,
   Maximize2,
+  Flame,
+  Sparkles,
 } from "lucide-react";
 import { DiwaliButton } from "@/components/ui/DiwaliButton";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -251,11 +253,74 @@ export default function RangoliActivityPage() {
     a.click();
     document.body.removeChild(a);
 
+    // Save to local storage gallery as well
+    try {
+      const raw = localStorage.getItem("deepavali_saved_rangolis");
+      const list = raw ? JSON.parse(raw) : [];
+      const newId = `rangoli_${Date.now()}`;
+      const newArt = {
+        id: newId,
+        url: canvas.toDataURL("image/png"),
+        caption: `Custom Rangoli #${list.length + 1}`,
+        createdAt: Date.now(),
+      };
+      localStorage.setItem("deepavali_saved_rangolis", JSON.stringify([newArt, ...list].slice(0, 15)));
+    } catch {
+      // Best-effort quota
+    }
+
     setHasUnsavedChanges(false);
     if (showSuccessToast) {
-      setToast("Rangoli artwork downloaded and saved to your device!");
+      setToast("Rangoli artwork downloaded and saved to your device & gallery!");
       setTimeout(() => setToast(null), 4000);
     }
+  };
+
+  /**
+   * Fire The Rangoli:
+   * Captures the current Rangoli drawing, stores it to saved gallery,
+   * sets it as active, and navigates to the WebGL2 Fireworks screen
+   * where rockets ascend and detonate into this exact Rangoli stencil!
+   */
+  const handleFireTheRangoli = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // 1. Capture current canvas artwork
+    const dataUrl = canvas.toDataURL("image/png");
+
+    // 2. Read existing saved rangolis from localStorage
+    let savedList: any[] = [];
+    try {
+      const raw = localStorage.getItem("deepavali_saved_rangolis");
+      if (raw) savedList = JSON.parse(raw);
+    } catch {
+      savedList = [];
+    }
+
+    const newId = `rangoli_${Date.now()}`;
+    const newArt = {
+      id: newId,
+      url: dataUrl,
+      caption: `Custom Rangoli #${savedList.length + 1}`,
+      createdAt: Date.now(),
+    };
+
+    // Prepend new artwork
+    const updated = [newArt, ...savedList.filter((item: any) => item.id !== newId)];
+    try {
+      localStorage.setItem("deepavali_saved_rangolis", JSON.stringify(updated.slice(0, 15)));
+      localStorage.setItem("deepavali_active_rangoli_id", newId);
+    } catch (e) {
+      console.warn("Storage quota limit reached, saving trimmed list", e);
+      localStorage.setItem("deepavali_saved_rangolis", JSON.stringify(updated.slice(0, 8)));
+      localStorage.setItem("deepavali_active_rangoli_id", newId);
+    }
+
+    setHasUnsavedChanges(false);
+
+    // 3. Navigate to fireworks screen
+    router.push(`/activities/rangoli/fireworks?id=${newId}`);
   };
 
   const drawSymmetrical = (x0: number, y0: number, x1: number, y1: number) => {
@@ -597,6 +662,17 @@ export default function RangoliActivityPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Fire The Rangoli Quick Button */}
+          <button
+            type="button"
+            onClick={handleFireTheRangoli}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-amber-400 text-diwali-night font-extrabold text-xs uppercase tracking-wider shadow-glow-gold hover:scale-105 active:scale-95 transition-all"
+            title="Launch fireworks that blast into this Rangoli design"
+          >
+            <Flame className="w-3.5 h-3.5 fill-amber-950 text-amber-950" />
+            <span>Fire Rangoli</span>
+          </button>
+
           {/* Direct Download / Save Button */}
           <button
             type="button"
@@ -850,6 +926,28 @@ export default function RangoliActivityPage() {
               <span>Unsaved Art</span>
             </span>
           )}
+        </div>
+
+        {/* Fire The Rangoli Call To Action */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-4 w-full max-w-[820px]">
+          <button
+            type="button"
+            onClick={handleFireTheRangoli}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-amber-400 text-diwali-night font-extrabold text-xs md:text-sm uppercase tracking-wider shadow-glow-gold-lg hover:scale-105 active:scale-95 transition-all"
+            title="Launch fireworks that detonate in the shape and vivid colors of your Rangoli artwork!"
+          >
+            <Flame className="w-4 h-4 md:w-5 md:h-5 fill-amber-950 text-amber-950" />
+            <span>🎆 Fire The Rangoli (Cracker Blast)</span>
+          </button>
+
+          <Link
+            href="/activities/rangoli/fireworks"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-black/50 border border-diwali-gold/40 text-diwali-gold hover:bg-diwali-gold/15 text-xs font-bold uppercase tracking-wider transition-all"
+            title="Explore all saved Rangoli artworks and detonate crackers on them"
+          >
+            <Sparkles className="w-4 h-4 text-diwali-gold" />
+            <span>Saved Rangoli Fireworks</span>
+          </Link>
         </div>
       </div>
 

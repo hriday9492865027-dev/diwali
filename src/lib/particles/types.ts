@@ -20,5 +20,6 @@ export interface PhotoAsset {
   id: string;
   url: string;
   caption?: string | null;
+  createdAt?: number;
 }
 

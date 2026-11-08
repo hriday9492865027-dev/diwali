@@ -6,20 +6,54 @@ import { ParticleState, PhotoAsset } from "@/lib/particles/types";
 import { processImageToParticleBuffers } from "@/lib/particles/saliency";
 import { portraitVertexShader, portraitFragmentShader } from "@/lib/particles/shaders";
 import { DiwaliButton } from "@/components/ui/DiwaliButton";
-import { Sparkles, ArrowLeft, Volume2, VolumeX, RotateCw, Image as ImageIcon, Download } from "lucide-react";
+import {
+  Sparkles,
+  ArrowLeft,
+  Volume2,
+  VolumeX,
+  RotateCw,
+  Image as ImageIcon,
+  Download,
+  Trash2,
+  Plus,
+} from "lucide-react";
 import Link from "next/link";
 
 interface ParticlePortraitEngineProps {
   photos: PhotoAsset[];
-  studentName: string;
+  initialIndex?: number;
+  studentName?: string;
+  mode?: "portrait" | "rangoli";
+  title?: string;
+  subtitle?: string;
+  backHref?: string;
+  backLabel?: string;
+  autoLaunch?: boolean;
+  onSelectPhoto?: (index: number) => void;
+  onDeletePhoto?: (id: string) => void;
 }
 
-export function ParticlePortraitEngine({ photos, studentName }: ParticlePortraitEngineProps) {
+export function ParticlePortraitEngine({
+  photos,
+  initialIndex = 0,
+  studentName,
+  mode = "portrait",
+  title,
+  subtitle,
+  backHref = "/dashboard",
+  backLabel = "Dashboard",
+  autoLaunch = false,
+  onSelectPhoto,
+  onDeletePhoto,
+}: ParticlePortraitEngineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [state, setState] = useState<ParticleState>("READY");
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(
+    initialIndex >= 0 && initialIndex < photos.length ? initialIndex : 0
+  );
+  const targetPhotoIndexRef = useRef<number | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -44,7 +78,9 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
   const playSound = (type: "rocket" | "explosion") => {
     if (!soundEnabled || typeof window === "undefined") return;
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!audioCtxRef.current) audioCtxRef.current = new AudioCtx();
       const ctx = audioCtxRef.current;
       if (ctx.state === "suspended") ctx.resume();
@@ -87,36 +123,40 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
   };
 
   // Helper to load photo and build particle geometry
-  const loadPhotoToGeometry = useCallback(async (photoUrl: string) => {
-    setIsLoadingImage(true);
-    try {
-      const isMobile = window.innerWidth < 768;
-      const budget = isMobile ? 4500 : 9000;
-      const buffers = await processImageToParticleBuffers(photoUrl, budget);
+  const loadPhotoToGeometry = useCallback(
+    async (photoUrl: string) => {
+      setIsLoadingImage(true);
+      try {
+        const isMobile = window.innerWidth < 768;
+        const defaultBudget = isMobile ? 5000 : 10000;
+        const budget = mode === "rangoli" ? (isMobile ? 6500 : 12000) : defaultBudget;
+        const buffers = await processImageToParticleBuffers(photoUrl, budget, mode);
 
-      if (!geometryRef.current) {
-        geometryRef.current = new THREE.BufferGeometry();
+        if (!geometryRef.current) {
+          geometryRef.current = new THREE.BufferGeometry();
+        }
+
+        const geom = geometryRef.current;
+        geom.setAttribute("position", new THREE.BufferAttribute(buffers.positions, 3));
+        geom.setAttribute("targetPosition", new THREE.BufferAttribute(buffers.targetPositions, 3));
+        geom.setAttribute("color", new THREE.BufferAttribute(buffers.colors, 3));
+        geom.setAttribute("size", new THREE.BufferAttribute(buffers.sizes, 1));
+        geom.setAttribute("alpha", new THREE.BufferAttribute(buffers.alphas, 1));
+
+        geom.attributes.position.needsUpdate = true;
+        geom.attributes.targetPosition.needsUpdate = true;
+        geom.attributes.color.needsUpdate = true;
+
+        setIsLoadingImage(false);
+        return true;
+      } catch (err) {
+        console.error("Failed to load photo buffers:", err);
+        setIsLoadingImage(false);
+        return false;
       }
-
-      const geom = geometryRef.current;
-      geom.setAttribute("position", new THREE.BufferAttribute(buffers.positions, 3));
-      geom.setAttribute("targetPosition", new THREE.BufferAttribute(buffers.targetPositions, 3));
-      geom.setAttribute("color", new THREE.BufferAttribute(buffers.colors, 3));
-      geom.setAttribute("size", new THREE.BufferAttribute(buffers.sizes, 1));
-      geom.setAttribute("alpha", new THREE.BufferAttribute(buffers.alphas, 1));
-
-      geom.attributes.position.needsUpdate = true;
-      geom.attributes.targetPosition.needsUpdate = true;
-      geom.attributes.color.needsUpdate = true;
-
-      setIsLoadingImage(false);
-      return true;
-    } catch (err) {
-      console.error("Failed to load photo buffers:", err);
-      setIsLoadingImage(false);
-      return false;
-    }
-  }, []);
+    },
+    [mode]
+  );
 
   // Initialize Three.js Scene, Camera, and Renderer
   useEffect(() => {
@@ -147,7 +187,7 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
     rendererRef.current = renderer;
 
-    // 3. Shader Material for Portrait Particles
+    // 3. Shader Material for Portrait/Rangoli Particles
     const material = new THREE.ShaderMaterial({
       vertexShader: portraitVertexShader,
       fragmentShader: portraitFragmentShader,
@@ -195,9 +235,10 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
     rocketMeshRef.current = rocketGroup;
     scene.add(rocketGroup);
 
-    // Load initial photo
+    // Load initial image
+    const startIdx = initialIndex >= 0 && initialIndex < photos.length ? initialIndex : 0;
     if (photos.length > 0) {
-      loadPhotoToGeometry(photos[0].url);
+      loadPhotoToGeometry(photos[startIdx].url);
     }
 
     // 6. Animation Loop
@@ -205,7 +246,6 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
 
     const animate = () => {
       const elapsedTime = clock.getElapsedTime();
-      const delta = clock.getDelta();
 
       if (materialRef.current) {
         materialRef.current.uniforms.uTime.value = elapsedTime;
@@ -254,16 +294,20 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
           setIsProcessing(false);
         }
       } else if (currentState === "PARTICLE_DISSOLVE") {
-        // Dissolve outward over 1.0s
-        const dissolveDur = 1.0;
+        // Dissolve outward smoothly over 0.75s
+        const dissolveDur = 0.75;
         const progress = Math.min(elapsedInState / dissolveDur, 1.0);
         if (materialRef.current) {
           materialRef.current.uniforms.uDissolveProgress.value = progress;
         }
 
         if (progress >= 1.0) {
-          // Advance to next photo and trigger next rocket launch
-          const nextIdx = (currentPhotoIndex + 1) % photos.length;
+          // Advance to targeted or next photo and trigger rocket launch
+          const nextIdx =
+            targetPhotoIndexRef.current !== null
+              ? targetPhotoIndexRef.current
+              : (currentPhotoIndex + 1) % photos.length;
+          targetPhotoIndexRef.current = null;
           setCurrentPhotoIndex(nextIdx);
           loadPhotoToGeometry(photos[nextIdx].url).then(() => {
             setState("ROCKET_LAUNCH");
@@ -307,25 +351,63 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
     };
   }, [photos, loadPhotoToGeometry]);
 
+  // Trigger launch helper
+  const triggerLaunch = () => {
+    setState("ROCKET_LAUNCH");
+    stateStartTimeRef.current = performance.now();
+    playSound("rocket");
+    if (materialRef.current) {
+      materialRef.current.uniforms.uMorphProgress.value = 0.0;
+      materialRef.current.uniforms.uDissolveProgress.value = 0.0;
+    }
+  };
+
+  // Auto-launch on mount if requested
+  useEffect(() => {
+    if (autoLaunch && photos.length > 0) {
+      const timer = setTimeout(() => {
+        triggerLaunch();
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [autoLaunch, photos.length]);
+
   // User click action: FIRE or NEXT PORTRAIT
   const handleFire = () => {
     if (isProcessing || isLoadingImage) return;
 
     setIsProcessing(true);
 
-    if (state === "PORTRAIT_IDLE") {
+    if (stateRef.current === "PORTRAIT_IDLE") {
       // Graceful dissolve before next photo
+      targetPhotoIndexRef.current = (currentPhotoIndex + 1) % photos.length;
       setState("PARTICLE_DISSOLVE");
       stateStartTimeRef.current = performance.now();
     } else {
-      // First launch from READY
-      setState("ROCKET_LAUNCH");
+      triggerLaunch();
+    }
+  };
+
+  // Select a specific saved Rangoli or photo and detonate immediately
+  const selectPhoto = (targetIdx: number) => {
+    if (isProcessing || isLoadingImage || targetIdx < 0 || targetIdx >= photos.length) return;
+
+    setIsProcessing(true);
+    setCurrentPhotoIndex(targetIdx);
+
+    if (onSelectPhoto) {
+      onSelectPhoto(targetIdx);
+    }
+
+    if (stateRef.current === "PORTRAIT_IDLE") {
+      targetPhotoIndexRef.current = targetIdx;
+      setState("PARTICLE_DISSOLVE");
       stateStartTimeRef.current = performance.now();
-      playSound("rocket");
-      if (materialRef.current) {
-        materialRef.current.uniforms.uMorphProgress.value = 0.0;
-        materialRef.current.uniforms.uDissolveProgress.value = 0.0;
-      }
+    } else {
+      targetPhotoIndexRef.current = null;
+      loadPhotoToGeometry(photos[targetIdx].url).then(() => {
+        triggerLaunch();
+      });
     }
   };
 
@@ -398,39 +480,48 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
     drawCorner(1080 - 56, 1350 - 56, Math.PI);
     drawCorner(56, 1350 - 56, -Math.PI / 2);
 
-    // 3. Header Typography
+    // 3. Render WebGL Particle Canvas Snapshot
+    const pW = 860;
+    const pH = 860;
+    const pX = (1080 - pW) / 2;
+    const pY = 160;
+    ctx.drawImage(srcCanvas, pX, pY, pW, pH);
+
+    // 4. Festive Typography
     ctx.textAlign = "center";
+    ctx.font = "bold 32px 'Cinzel', Georgia, serif";
     ctx.fillStyle = "#f59e0b";
-    ctx.font = "bold 34px Georgia, serif";
-    ctx.fillText("✨  शुभ दीपावली  ✨", 540, 110);
+    ctx.shadowColor = "rgba(245, 158, 11, 0.5)";
+    ctx.shadowBlur = 15;
+    ctx.fillText("SHUBH DEEPAVALI", 540, 1080);
+    ctx.shadowBlur = 0;
 
-    ctx.fillStyle = "#fef3c7";
-    ctx.font = "600 18px sans-serif";
-    ctx.fillText("FESTIVAL OF LIGHTS • 2026", 540, 145);
+    ctx.font = "italic 22px 'Cinzel', Georgia, serif";
+    ctx.fillStyle = "#fef08a";
+    const headerTitle =
+      mode === "rangoli"
+        ? currentCaption || "Celestial Rangoli Fireworks"
+        : studentName
+        ? `Celebrating ${studentName}`
+        : "Festival of Lights";
+    ctx.fillText(headerTitle, 540, 1125);
 
-    // 4. Draw the WebGL particle portrait centered
-    const destW = 920;
-    const destH = (srcCanvas.height / srcCanvas.width) * destW;
-    const destX = (1080 - destW) / 2;
-    const destY = 180 + (900 - destH) / 2;
-    ctx.drawImage(srcCanvas, destX, destY, destW, destH);
+    ctx.font = "14px system-ui, -apple-system, sans-serif";
+    ctx.fillStyle = "rgba(253, 251, 247, 0.6)";
+    ctx.fillText(
+      mode === "rangoli"
+        ? "Sacred Symmetrical Light Constellation • Diwali 2026"
+        : "Sculpted in Starlight • Diwali 2026",
+      540,
+      1170
+    );
 
-    // 5. Footer Personalized Banner
-    ctx.fillStyle = "#f59e0b";
-    ctx.font = "bold 36px Georgia, serif";
-    ctx.fillText(studentName, 540, 1150);
-
-    ctx.fillStyle = "rgba(254, 243, 199, 0.75)";
-    ctx.font = "16px sans-serif";
-    ctx.fillText("May your path always be illuminated with wisdom, peace & joy.", 540, 1195);
-
-    ctx.fillStyle = "rgba(245, 158, 11, 0.5)";
-    ctx.font = "12px sans-serif";
-    ctx.fillText("DEEPAVALI CELEBRATION PLATFORM", 540, 1260);
-
-    // 6. Trigger Download
+    // 5. Download Action
     const link = document.createElement("a");
-    link.download = `Deepavali_Portrait_${studentName.replace(/\s+/g, "_")}.png`;
+    link.download =
+      mode === "rangoli"
+        ? `diwali-rangoli-fireworks-${Date.now()}.png`
+        : `deepavali-portrait-${Date.now()}.png`;
     link.href = souvenir.toDataURL("image/png");
     link.click();
   };
@@ -438,7 +529,10 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
   const currentCaption = photos[currentPhotoIndex]?.caption;
 
   return (
-    <div ref={containerRef} className="relative w-full h-[82vh] md:h-[86vh] flex flex-col justify-between overflow-hidden select-none">
+    <div
+      ref={containerRef}
+      className="relative w-full h-[88vh] md:h-[90vh] flex flex-col justify-between overflow-hidden select-none"
+    >
       {/* Three.js Particle Canvas with Interactive Forcefield */}
       <canvas
         ref={canvasRef}
@@ -448,24 +542,24 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
       />
 
       {/* Top Controls Overlay */}
-      <div className="relative z-10 w-full max-w-5xl mx-auto flex items-center justify-between p-4">
+      <div className="relative z-20 w-full max-w-5xl mx-auto flex items-center justify-between p-4 gap-2">
         <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 border border-diwali-gold/30 text-xs text-diwali-ivory hover:text-diwali-gold hover:bg-black/60 transition-colors"
+          href={backHref}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 border border-diwali-gold/30 text-xs text-diwali-ivory hover:text-diwali-gold hover:bg-black/60 transition-colors backdrop-blur-sm"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Dashboard</span>
+          <span>{backLabel}</span>
         </Link>
 
-        {/* Current Photo Sequence Counter */}
-        {photos.length > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-diwali-gold/15 border border-diwali-gold/30 text-xs font-semibold text-diwali-gold">
-            <ImageIcon className="w-3.5 h-3.5" />
-            <span>
-              Memory {currentPhotoIndex + 1} of {photos.length}
-            </span>
-          </div>
-        )}
+        {/* Title / Counter */}
+        <div className="text-center">
+          <h2 className="text-sm md:text-base font-bold tracking-[0.16em] text-gold-gradient uppercase">
+            {title || (mode === "rangoli" ? "Celestial Rangoli Fireworks" : "Particle Portrait")}
+          </h2>
+          <p className="text-[10px] text-diwali-muted">
+            {subtitle || (mode === "rangoli" ? "Cracker Burst in Rangoli Geometry" : "Sculpted in Cosmic Light")}
+          </p>
+        </div>
 
         <button
           onClick={() => setSoundEnabled(!soundEnabled)}
@@ -476,57 +570,147 @@ export function ParticlePortraitEngine({ photos, studentName }: ParticlePortrait
         </button>
       </div>
 
-      {/* Bottom Control Bar */}
-      <div className="relative z-10 w-full max-w-lg mx-auto flex flex-col items-center gap-3 p-6 text-center">
-        {/* Caption & Status */}
-        {currentCaption && state === "PORTRAIT_IDLE" && (
-          <div className="px-4 py-1.5 rounded-full bg-black/60 border border-diwali-gold/30 text-xs text-diwali-gold tracking-wide animate-fade-in shadow-glow-gold">
-            {currentCaption}
+      {/* Bottom Interface: Mode-Specific Gallery or Standard Portrait Controls */}
+      {mode === "rangoli" ? (
+        /* Rangoli Mode: Saved Arts Drawer with Click-to-Blast Action */
+        <div className="relative z-20 w-full max-w-5xl mx-auto p-4 pointer-events-auto">
+          <div className="p-3.5 md:p-4 rounded-2xl bg-black/75 backdrop-blur-md border border-diwali-gold/35 shadow-2xl space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-diwali-gold animate-pulse" />
+                <span className="text-xs uppercase tracking-widest text-diwali-gold font-bold">
+                  Saved Rangoli Gallery ({photos.length})
+                </span>
+                <span className="text-[10px] text-diwali-muted hidden sm:inline">
+                  — Tap any art to fire crackers in its design!
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectPhoto(currentPhotoIndex)}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-diwali-gold text-diwali-night hover:scale-105 active:scale-95 transition-all shadow-glow-gold disabled:opacity-50"
+                  title="Re-launch cracker rocket into active Rangoli"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Replay Blast</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadSouvenir}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-black/60 border border-diwali-gold/40 text-diwali-gold hover:bg-diwali-gold/20 transition-all"
+                  title="Save celestial fireworks souvenir snapshot"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Snapshot</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Horizontal Scrollable Thumbnails Carousel */}
+            <div className="flex items-center gap-3 overflow-x-auto pb-1 pt-1">
+              {photos.map((item, idx) => (
+                <div
+                  key={item.id}
+                  onClick={() => selectPhoto(idx)}
+                  className={`flex-shrink-0 cursor-pointer rounded-xl p-1.5 border transition-all duration-300 flex items-center gap-2.5 ${
+                    currentPhotoIndex === idx
+                      ? "bg-diwali-gold/20 border-diwali-gold shadow-glow-gold scale-105 ring-1 ring-diwali-gold"
+                      : "bg-black/50 border-white/15 hover:border-diwali-gold/50 opacity-75 hover:opacity-100"
+                  }`}
+                >
+                  <img
+                    src={item.url}
+                    alt={item.caption || `Rangoli ${idx + 1}`}
+                    className="w-12 h-12 rounded-lg object-cover bg-stone-900 border border-white/10"
+                  />
+                  <div className="text-left pr-1">
+                    <p className="text-[11px] font-bold text-diwali-ivory max-w-[120px] truncate">
+                      {item.caption || `Rangoli #${idx + 1}`}
+                    </p>
+                    <p className="text-[9px] text-diwali-gold font-mono uppercase">
+                      {currentPhotoIndex === idx ? "✨ Active Burst" : "Tap to Fire"}
+                    </p>
+                  </div>
+                  {onDeletePhoto && photos.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeletePhoto(item.id);
+                      }}
+                      className="p-1 rounded-md text-red-400 hover:bg-red-950/60 opacity-60 hover:opacity-100 transition-opacity"
+                      title="Delete saved Rangoli"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              <Link
+                href="/activities/rangoli"
+                className="flex-shrink-0 px-3.5 py-3 rounded-xl border border-dashed border-diwali-gold/40 hover:border-diwali-gold bg-diwali-gold/5 hover:bg-diwali-gold/15 text-diwali-gold text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Draw New</span>
+              </Link>
+            </div>
           </div>
-        )}
-
-        {/* Trigger Button: Fire / Next Memory + Souvenir Download */}
-        <div className="flex items-center gap-3 flex-wrap justify-center">
-          <DiwaliButton
-            size="lg"
-            onClick={handleFire}
-            isLoading={isProcessing || isLoadingImage}
-            className="min-w-[210px]"
-          >
-            {state === "READY" ? (
-              <span className="inline-flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                <span>Launch Firecracker</span>
-              </span>
-            ) : state === "PORTRAIT_IDLE" ? (
-              <span className="inline-flex items-center gap-2">
-                <RotateCw className="w-4 h-4" />
-                <span>Reconstruct Next Memory</span>
-              </span>
-            ) : (
-              <span>Reconstructing Light...</span>
-            )}
-          </DiwaliButton>
-
-          {state === "PORTRAIT_IDLE" && (
-            <button
-              onClick={handleDownloadSouvenir}
-              className="inline-flex items-center gap-2 px-4 py-3 rounded-full bg-black/50 border border-diwali-gold/50 text-xs font-semibold text-diwali-gold hover:bg-diwali-gold/20 hover:scale-105 active:scale-95 transition-all shadow-glow-gold"
-              title="Download High-Res Festive Souvenir"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Save Souvenir</span>
-            </button>
-          )}
         </div>
+      ) : (
+        /* Portrait Mode: Standard Single/Sequence Controls */
+        <div className="relative z-20 w-full max-w-lg mx-auto flex flex-col items-center gap-3 p-6 text-center">
+          {currentCaption && state === "PORTRAIT_IDLE" && (
+            <div className="px-4 py-1.5 rounded-full bg-black/60 border border-diwali-gold/30 text-xs text-diwali-gold tracking-wide animate-fade-in shadow-glow-gold">
+              {currentCaption}
+            </div>
+          )}
 
-        <p className="text-[11px] text-diwali-muted/70 tracking-wider">
-          {state === "PORTRAIT_IDLE"
-            ? "Hover or drag your cursor to interact with the starlight field. Click Save Souvenir to download your festive portrait."
-            : "Click launch to ascend a celebratory rocket and sculpt your portrait in starlight."}
-        </p>
-      </div>
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <DiwaliButton
+              size="lg"
+              onClick={handleFire}
+              isLoading={isProcessing || isLoadingImage}
+              className="min-w-[210px]"
+            >
+              {state === "READY" ? (
+                <span className="inline-flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  <span>Launch Firecracker</span>
+                </span>
+              ) : state === "PORTRAIT_IDLE" ? (
+                <span className="inline-flex items-center gap-2">
+                  <RotateCw className="w-4 h-4" />
+                  <span>Reconstruct Next Memory</span>
+                </span>
+              ) : (
+                <span>Reconstructing Light...</span>
+              )}
+            </DiwaliButton>
+
+            {state === "PORTRAIT_IDLE" && (
+              <button
+                onClick={handleDownloadSouvenir}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-full bg-black/50 border border-diwali-gold/50 text-xs font-semibold text-diwali-gold hover:bg-diwali-gold/20 hover:scale-105 active:scale-95 transition-all shadow-glow-gold"
+                title="Download High-Res Festive Souvenir"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save Souvenir</span>
+              </button>
+            )}
+          </div>
+
+          <p className="text-[11px] text-diwali-muted/70 tracking-wider">
+            {state === "PORTRAIT_IDLE"
+              ? "Hover or drag your cursor to interact with the starlight field. Click Save Souvenir to download your festive portrait."
+              : "Click launch to ascend a celebratory rocket and sculpt your portrait in starlight."}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
-

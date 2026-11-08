@@ -7,7 +7,8 @@ import { ParticleBufferData } from "./types";
  */
 export async function processImageToParticleBuffers(
   imageUrl: string,
-  targetParticleBudget: number = 8000
+  targetParticleBudget: number = 8000,
+  mode: "portrait" | "rangoli" = "portrait"
 ): Promise<ParticleBufferData> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -90,28 +91,43 @@ export async function processImageToParticleBuffers(
 
         const candidates: Candidate[] = [];
         const centerX = targetWidth / 2;
-        const centerY = targetHeight * 0.42; // Human face is typically centered around top 40-50%
+        const centerY = mode === "rangoli" ? targetHeight / 2 : targetHeight * 0.42;
 
-        for (let y = 0; y < targetHeight; y += 2) {
-          for (let x = 0; x < targetWidth; x += 2) {
+        const step = mode === "rangoli" ? 1 : 2;
+
+        for (let y = 0; y < targetHeight; y += step) {
+          for (let x = 0; x < targetWidth; x += step) {
             const idx = y * targetWidth + x;
             const a = data[idx * 4 + 3];
-            if (a < 50) continue; // Skip transparent pixels
+            if (a < 35) continue; // Skip transparent pixels
 
             const r = data[idx * 4] / 255;
             const g = data[idx * 4 + 1] / 255;
             const b = data[idx * 4 + 2] / 255;
+            const lum = 0.299 * r * 255 + 0.587 * g * 255 + 0.114 * b * 255;
 
-            // Distance to estimated facial center
-            const dx = (x - centerX) / targetWidth;
-            const dy = (y - centerY) / targetHeight;
-            const distToCenter = Math.sqrt(dx * dx + dy * dy);
-            const centerBoost = Math.max(0, 1 - distToCenter * 2.2);
+            // In rangoli mode: filter out dark navy/black background so particles purely trace the drawn lines!
+            if (mode === "rangoli" && lum < 22) {
+              continue;
+            }
 
-            const edgeScore = edges[idx] / 255;
+            let weight = 1.0;
+            if (mode === "rangoli") {
+              const edgeScore = edges[idx] / 255;
+              // Emphasize vibrant pigments and sharp powder contours
+              weight = lum * 2.0 + edgeScore * 25.0 + 1.0;
+            } else {
+              // Distance to estimated facial center
+              const dx = (x - centerX) / targetWidth;
+              const dy = (y - centerY) / targetHeight;
+              const distToCenter = Math.sqrt(dx * dx + dy * dy);
+              const centerBoost = Math.max(0, 1 - distToCenter * 2.2);
 
-            // Saliency Weight: Edges (eyes/mouth contours) + Face Center Focus
-            const weight = 0.5 + edgeScore * 3.5 + centerBoost * 2.0;
+              const edgeScore = edges[idx] / 255;
+
+              // Saliency Weight: Edges (eyes/mouth contours) + Face Center Focus
+              weight = 0.5 + edgeScore * 3.5 + centerBoost * 2.0;
+            }
 
             candidates.push({ x, y, r, g, b, weight });
           }
@@ -119,7 +135,27 @@ export async function processImageToParticleBuffers(
 
         // 3. Probabilistic weighted reservoir sampling to match targetParticleBudget
         candidates.sort((a, b) => b.weight - a.weight);
-        const selected = candidates.slice(0, targetParticleBudget);
+        let selected = candidates.slice(0, targetParticleBudget);
+
+        // Fallback radiant mandala starlight if image is blank or has no candidates
+        if (selected.length === 0) {
+          const fallbackBudget = 3000;
+          for (let i = 0; i < fallbackBudget; i++) {
+            const angle = (i / fallbackBudget) * Math.PI * 2 * 8;
+            const r = ((i % 500) / 500) * (targetWidth * 0.4);
+            const fx = centerX + Math.cos(angle) * r;
+            const fy = centerY + Math.sin(angle) * r;
+            selected.push({
+              x: fx,
+              y: fy,
+              r: 0.96,
+              g: 0.75,
+              b: 0.26,
+              weight: 1.0,
+            });
+          }
+        }
+
         const count = selected.length;
 
         // 4. Construct typed arrays for GPU BufferGeometry
