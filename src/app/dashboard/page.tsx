@@ -82,12 +82,12 @@ export default async function DashboardPage() {
     },
     {
       id: "rangoli",
-      title: "Rangoli Creator",
-      subtitle: "Draw kaleidoscopic symmetrical rangoli designs with brilliant neon glowing dust",
+      title: "Rangoli Creator & Fireworks",
+      subtitle: "Draw kaleidoscopic symmetrical sand art and fire crackers that blast in your Rangoli geometry",
       icon: Palette,
       href: "/activities/rangoli",
       featured: false,
-      badge: "Creative",
+      badge: "Creative & Blast",
     },
     {
       id: "finale",
