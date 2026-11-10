@@ -144,7 +144,7 @@ export default function LanternsActivityPage() {
             className="absolute bottom-0 pointer-events-none"
             style={{
               left: `${l.leftPercent}%`,
-              animation: `lanternAscend ${l.speed}s cubic-bezier(0.25, 0.1, 0.25, 1) forwards`,
+              animation: `lanternAscend ${l.speed}s linear forwards`,
               animationDelay: l.delay ? `${l.delay}s` : "0s",
               willChange: "transform, opacity",
             }}
@@ -160,8 +160,8 @@ export default function LanternsActivityPage() {
                 } as React.CSSProperties
               }
             >
-              {/* Glowing Lantern SVG (Generous majestic size) */}
-              <div className="w-24 h-30 sm:w-28 sm:h-36 md:w-32 md:h-40 relative flex items-center justify-center filter drop-shadow-[0_0_35px_rgba(245,158,11,0.9)]">
+              {/* Glowing Lantern SVG (Majestic, atmospheric size) */}
+              <div className="w-32 h-40 sm:w-40 sm:h-52 md:w-48 md:h-60 relative flex items-center justify-center filter drop-shadow-[0_0_40px_rgba(245,158,11,0.95)]">
                 <svg viewBox="0 0 80 100" className="w-full h-full" fill="none">
                   <defs>
                     <radialGradient id={`lanternLight-${l.id}`} cx="50%" cy="60%" r="50%">
@@ -198,14 +198,14 @@ export default function LanternsActivityPage() {
               </div>
 
               {/* Golden Hanging Cords */}
-              <div className="flex items-center justify-center gap-3.5 -mt-1 mb-1">
-                <div className="w-0.5 h-2.5 bg-gradient-to-b from-diwali-gold via-amber-400 to-amber-600/50" />
-                <div className="w-0.5 h-2.5 bg-gradient-to-b from-diwali-gold via-amber-400 to-amber-600/50" />
+              <div className="flex items-center justify-center gap-4 -mt-1 mb-1">
+                <div className="w-0.5 h-3 bg-gradient-to-b from-diwali-gold via-amber-400 to-amber-600/50" />
+                <div className="w-0.5 h-3 bg-gradient-to-b from-diwali-gold via-amber-400 to-amber-600/50" />
               </div>
 
               {/* Large, High-Contrast Wish Inscription Plaque */}
-              <div className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-black/85 border border-diwali-gold/60 shadow-[0_0_20px_rgba(245,192,66,0.4)] backdrop-blur-md max-w-[220px] sm:max-w-[280px] md:max-w-[340px] text-center">
-                <p className="text-xs sm:text-sm md:text-[15px] font-semibold text-amber-200 tracking-wide break-words leading-tight">
+              <div className="px-5 py-2.5 sm:px-6 sm:py-3.5 rounded-2xl bg-black/90 border-2 border-diwali-gold/70 shadow-[0_0_25px_rgba(245,192,66,0.5)] backdrop-blur-md max-w-[280px] sm:max-w-[360px] md:max-w-[420px] text-center">
+                <p className="text-sm sm:text-base md:text-lg font-bold text-amber-100 tracking-wide break-words leading-snug">
                   ✨ {l.text}
                 </p>
               </div>

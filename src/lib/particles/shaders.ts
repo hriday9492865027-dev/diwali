@@ -35,7 +35,7 @@ export const portraitVertexShader = `
 
     // 1. Direct Rangoli Blast: Sparks explode directly outward from the rocket apex into the Rangoli mandala!
     float blastP = clamp(max(uBlastProgress, uMorphProgress), 0.0, 1.0);
-    float blastEase = 1.0 - pow(1.0 - blastP, 3.5);
+    float blastEase = 1.0 - pow(1.0 - blastP, 3.2);
 
     // Natural velocity variance so sparks don't travel in a mechanical ring
     float pVar = 0.88 + 0.24 * hash(targetPosition * 5.0);
@@ -50,8 +50,14 @@ export const portraitVertexShader = `
         hash(targetPosition + 1.2),
         hash(targetPosition + 3.4),
         hash(targetPosition + 5.6)
-      ) - 0.5) * 0.16 * (1.0 - blastEase);
+      ) - 0.5) * 0.14 * (1.0 - blastEase);
       currentPos += jitter;
+    }
+
+    // Graceful initial explosion alpha: prevents tens of thousands of overlapping points
+    // at the apex coordinate from oversaturating into a solid blinding white blob
+    if (blastP < 0.12) {
+      vAlpha *= smoothstep(0.01, 0.12, blastP);
     }
 
     // 2. Starlight Twinkle & Shimmer during Hold Phase (Rangoli fully crystallized)
@@ -111,17 +117,12 @@ export const portraitVertexShader = `
     // Attenuated point size based on camera distance and pixel ratio (calibrated for delicate hairline starlight embers)
     float baseSize = size * (16.0 / -mvPosition.z) * uPixelRatio;
 
-    // Initial detonation ignition flash
-    if (blastP < 0.25) {
-      baseSize *= (1.0 + (1.0 - blastP / 0.25) * 0.7);
-    }
-
     // Embers shrink as they die down during gravity fall
     if (uFallProgress > 0.0) {
       baseSize *= clamp(1.0 - uFallProgress * 0.65, 0.2, 1.0);
     }
 
-    gl_PointSize = clamp(baseSize, 1.0, 16.0);
+    gl_PointSize = clamp(baseSize, 1.0, 14.0);
   }
 `;
 
@@ -139,10 +140,21 @@ export const portraitFragmentShader = `
     float glow = smoothstep(0.5, 0.08, dist) * 0.7;
     float intensity = core + glow;
 
-    // Keep true vibrant Rangoli pigments, with only the pinpoint center core glinting bright
-    vec3 sparkColor = mix(vColor, vec3(1.0, 0.98, 0.9), core * 0.5);
+    // Boost pigment chroma to counteract additive blending desaturation
+    // Keeps Vermillion red fiery red, Gulabi pink neon magenta, Surya gold warm gold
+    float maxC = max(vColor.r, max(vColor.g, vColor.b));
+    float minC = min(vColor.r, min(vColor.g, vColor.b));
+    float chroma = maxC - minC;
+    vec3 vibrantColor = vColor;
+    if (chroma > 0.08) {
+      vibrantColor = mix(vColor, vColor / (maxC + 0.001), 0.35);
+    }
 
-    gl_FragColor = vec4(sparkColor, vAlpha * intensity * 0.85);
+    // Only pinpoint center glints white
+    float pin = smoothstep(0.06, 0.0, dist);
+    vec3 sparkColor = mix(vibrantColor, vec3(1.0, 1.0, 1.0), pin * 0.28);
+
+    gl_FragColor = vec4(sparkColor, vAlpha * intensity * 0.9);
   }
 `;
 

@@ -53,55 +53,53 @@ body {
   border-image: linear-gradient(135deg, rgba(245, 192, 66, 0.6), rgba(234, 88, 12, 0.3), rgba(245, 192, 66, 0.1)) 1;
 }
 
-/* Sky Lantern Atmospheric Ascent: Continuous, smooth, non-stuttering vertical rise */
+/* Sky Lantern Atmospheric Ascent: Continuous, unbroken, silky smooth rise */
 @keyframes lanternAscend {
   0% {
-    transform: translateY(40px) scale(1);
+    transform: translateY(60px) scale(1);
     opacity: 0;
   }
-  3% {
+  4% {
     transform: translateY(0px) scale(1);
     opacity: 1;
   }
-  20% {
-    transform: translateY(-24vh) scale(0.97);
+  65% {
     opacity: 1;
   }
-  45% {
-    transform: translateY(-54vh) scale(0.92);
-    opacity: 0.98;
-  }
-  70% {
-    transform: translateY(-84vh) scale(0.86);
-    opacity: 0.95;
-  }
-  82% {
-    /* Gentle dissolve starts as lantern approaches and passes the upper sky */
-    transform: translateY(-100vh) scale(0.8);
-    opacity: 0.8;
+  80% {
+    /* Dissolve starts gracefully as lantern approaches the higher heavens */
+    opacity: 0.75;
   }
   92% {
-    transform: translateY(-116vh) scale(0.74);
     opacity: 0.35;
   }
   100% {
-    transform: translateY(-130vh) scale(0.68);
+    transform: translateY(-130vh) scale(0.72);
     opacity: 0;
   }
 }
 
-/* Sky Lantern Wind Sway: Natural harmonic swaying & banking left and right */
+/* Sky Lantern Wind Sway: Natural harmonic swaying & banking in gentle organic curves */
 @keyframes lanternSway {
   0% {
-    transform: translateX(calc(var(--sway-dist, 26px) * -1)) rotate(-3deg);
+    transform: translateX(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateX(calc(var(--sway-dist, 26px) * 0.8)) rotate(2.8deg);
+  }
+  50% {
+    transform: translateX(0px) rotate(-0.8deg);
+  }
+  75% {
+    transform: translateX(calc(var(--sway-dist, 26px) * -0.9)) rotate(-2.8deg);
   }
   100% {
-    transform: translateX(var(--sway-dist, 26px)) rotate(3deg);
+    transform: translateX(0px) rotate(0deg);
   }
 }
 
 .animate-lantern-ascend {
-  animation: lanternAscend 16s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  animation: lanternAscend 18s linear forwards;
 }
 
 /* Firework Rocket Tracer Ascent matching reference video */
@@ -126,7 +124,31 @@ body {
   animation: rocketAscent 2.0s cubic-bezier(0.12, 0.75, 0.25, 1) forwards;
 }
 
-/* Custom sleek golden horizontal scrollbar for gallery */
+/* Universal sleek golden scrollbars across the entire application */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 192, 66, 0.4) rgba(0, 0, 0, 0.4);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(245, 192, 66, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 192, 66, 0.8);
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   height: 6px;
 }

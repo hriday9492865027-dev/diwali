@@ -102,21 +102,32 @@ export async function processImageToParticleBuffers(
             const a = data[idx * 4 + 3];
             if (a < 35) continue; // Skip transparent pixels
 
-            const r = data[idx * 4] / 255;
-            const g = data[idx * 4 + 1] / 255;
-            const b = data[idx * 4 + 2] / 255;
-            const lum = 0.299 * r * 255 + 0.587 * g * 255 + 0.114 * b * 255;
+            const rByte = data[idx * 4];
+            const gByte = data[idx * 4 + 1];
+            const bByte = data[idx * 4 + 2];
 
-            // In rangoli mode: filter out dark navy/black background so particles purely trace the drawn lines!
-            if (mode === "rangoli" && lum < 22) {
-              continue;
+            const r = rByte / 255;
+            const g = gByte / 255;
+            const b = bByte / 255;
+
+            // In rangoli mode: detect and filter out the midnight canvas background (#0a0e27: R:10, G:14, B:39)
+            // so particles exclusively celebrate the sacred drawn pigments!
+            if (mode === "rangoli") {
+              const bgDist = Math.hypot(rByte - 10, gByte - 14, bByte - 39);
+              if (bgDist < 25) {
+                continue;
+              }
             }
 
             let weight = 1.0;
             if (mode === "rangoli") {
               const edgeScore = edges[idx] / 255;
-              // Emphasize vibrant pigments and sharp powder contours
-              weight = lum * 2.0 + edgeScore * 25.0 + 1.0;
+              const maxC = Math.max(r, g, b);
+              const minC = Math.min(r, g, b);
+              const chroma = maxC - minC;
+              // Chroma boost without luminance bias: gives equal top priority to
+              // vivid Pink (#ec4899), Red (#e11d48), Surya Gold (#f5c042), Cyan and Green!
+              weight = 1.0 + chroma * 8.0 + edgeScore * 12.0;
             } else {
               // Distance to estimated facial center
               const dx = (x - centerX) / targetWidth;
@@ -134,9 +145,25 @@ export async function processImageToParticleBuffers(
           }
         }
 
-        // 3. Probabilistic weighted reservoir sampling to match targetParticleBudget
-        candidates.sort((a, b) => b.weight - a.weight);
-        let selected = candidates.slice(0, targetParticleBudget);
+        // 3. Reservoir sampling to match targetParticleBudget
+        let selected: Candidate[];
+        if (mode === "rangoli") {
+          if (candidates.length <= targetParticleBudget) {
+            // Keep 100% of all drawn Rangoli pigment pixels so every stroke is preserved!
+            selected = candidates;
+          } else {
+            // Uniform stratified sampling across the canvas to preserve all colors and fine lines equally
+            const ratio = candidates.length / targetParticleBudget;
+            selected = [];
+            for (let i = 0; i < targetParticleBudget; i++) {
+              const pickIdx = Math.floor(i * ratio);
+              selected.push(candidates[pickIdx]);
+            }
+          }
+        } else {
+          candidates.sort((a, b) => b.weight - a.weight);
+          selected = candidates.slice(0, targetParticleBudget);
+        }
 
         // Fallback radiant mandala starlight if image is blank or has no candidates
         if (selected.length === 0) {

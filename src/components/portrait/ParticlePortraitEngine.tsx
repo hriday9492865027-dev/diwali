@@ -416,10 +416,13 @@ export function ParticlePortraitEngine({
 
     // 7. Animation Loop
     let clock = new THREE.Clock();
+    let lastFrameTime = performance.now();
 
     const animate = () => {
+      const now = performance.now();
       const elapsedTime = clock.getElapsedTime();
-      const delta = Math.min(clock.getDelta(), 0.05);
+      const delta = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
 
       if (materialRef.current) {
         materialRef.current.uniforms.uTime.value = elapsedTime;
@@ -427,7 +430,6 @@ export function ParticlePortraitEngine({
 
       // State Machine Transition Logic
       const currentState = stateRef.current;
-      const now = performance.now();
       const elapsedInState = (now - stateStartTimeRef.current) / 1000;
 
       // Trailing spark emission during ROCKET_LAUNCH
@@ -497,7 +499,8 @@ export function ParticlePortraitEngine({
       }
 
       if (trailMeshRef.current) {
-        trailMeshRef.current.visible = activeTrailCount > 0;
+        // Enforce trail visibility strictly during rocket ascent only
+        trailMeshRef.current.visible = currentState === "ROCKET_LAUNCH" && activeTrailCount > 0;
       }
 
       if (currentState === "READY") {
@@ -529,6 +532,16 @@ export function ParticlePortraitEngine({
           if (progress >= 1.0) {
             // Rocket reached apex -> Detonate directly into Rangoli geometry!
             rocketMeshRef.current.visible = false;
+            // Clean up launch ascent trail immediately so no vertical sparks persist
+            trailSparksRef.current = [];
+            if (trailGeomRef.current) {
+              trailGeomRef.current.setDrawRange(0, 0);
+              trailGeomRef.current.attributes.position.needsUpdate = true;
+            }
+            if (trailMeshRef.current) {
+              trailMeshRef.current.visible = false;
+            }
+
             if (pointsMeshRef.current) {
               pointsMeshRef.current.visible = true;
             }
